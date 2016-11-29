@@ -1,0 +1,73 @@
+= Architecture Overview
+
+== Let's Encrypt Controller
+Controller should be stateless service to keep it as easy to run as possible. The state will be represented by OpenShift/Kubernetes objects and their annotations.
+
+== Supported ACME Challenges
+=== http-01
+Requires no additional management as it uses internal Router/Ingress for the challenge.
+
+=== dns-01
+You need to have a plugin to allow changing DNS at your provider and also configure a Secret as a credentials for it.
+
+
+[source,yaml]
+----
+# TODO: add labels specification for dns-01
+----
+
+== Managed Objects
+You have to mark your objects with following annotation to be picked up by the controller
+[source,yaml]
+----
+kubernetes.io/tls-acme: "true"
+----
+
+There are also optional annotations to overwrite the default behaviour
+[source,yaml]
+----
+kubernetes.io/tls-acme-secretname: "generated secret name"
+kubernetes.io/tls-acme-secretnamespace: "generated secret namespace"
+# ...
+----
+
+
+=== Supported Objects
+==== openshift.org.v1.Route
+Controller reads `Route.spec.host` field and generates a certificate represented by a Secret. Also updates `Route.spec.tls.key` and `Route.spec.tls.certificate` with the new values. That will trigger updating Router's configuration and doing reload.
+
+==== kubernetes.io.v1beta1.Ingress
+Controller reads `Ingress.spec.tls.[].hosts` fields and generates a certificate represented by a Secret. It will update `Ingress.spec.tls.[].secretName` to point to the correct certificate.
+
+==== kubernetes.io.v1.Secret
+Controller reads annotations to configure DNS provider and updates `Secret.data.'tls.crt'` and `Secret.data.'tls.key'`
+
+- Supports only dns-01
+
+
+== Representing Certificates ==
+Every certificate provided by this controller is represented by corresponding Secret in the cluster. This allows optional mounting of certificate in pods or for other purposes. It also ensures that we do not provision certificates that we already have. In case there are 2 Routes with different path. If there are subjectAlternativeNames for this certificate, name of the Secret is suffixed with sha512 of all of them joined by space into a string.
+[source,yaml]
+----
+apiVersion: v1
+data:
+  tls.crt: base64 encoded cert
+  tls.key: base64 encoded key
+kind: Secret
+metadata:
+  name: domain
+  annotation:
+    kubernetes.io/tls-acme-generated-for: "domain"
+type: kubernetes.io/tls
+
+----
+
+== Certificate Renewal
+There is a configurable time range specifying when to ask for certificate renewal. Good default seems to be between 1/2 and 1/3 of certificate lifetime with some (repeatable) statistical distribution in between. We will make sure that we do our best to avoid hiting let's encrypt limits by not using batches. If issuing the certificate fails it is not considered a failure and controller will try again with exponential backoff.
+
+If you use edge termination router will pick up new certificates automatically.
+
+TODO: design reload policy when secret if mounted into pods. (app responsibility, SIGHUP, ?)
+
+== Other Options
+- Limits for issuing certificates in certain time period
