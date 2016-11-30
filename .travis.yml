@@ -1,0 +1,86 @@
+sudo: required
+
+language: go
+
+go_import_path: github.com/tnozicka/openshift-acme
+
+matrix:
+  include:
+  - go: 1.7
+    services: [docker]
+    env: AUTHORITATIVE=true # Don't run some stuff more than once.
+  - go: 1.8rc1
+    services: [docker]
+
+addons:
+  apt:
+    packages:
+    - bsdtar
+
+before_install:
+- go get golang.org/x/tools/cmd/goimports
+- go get github.com/Masterminds/glide
+- go get github.com/sgotti/glide-vc
+- go get github.com/openshift/source-to-image/cmd/s2i
+- curl -L https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip | bsdtar -xvf- -C ${GOPATH}/bin/ && chmod +x ${GOPATH}/bin/ngrok
+- |
+  if [ ${AUTHORITATIVE} ]; then
+    tmp=`mktemp`
+    echo 'DOCKER_OPTS="$DOCKER_OPTS --insecure-registry 172.30.0.0/16"' > ${tmp}
+    sudo mv ${tmp} /etc/default/docker
+    sudo mount --make-shared /
+    sudo service docker restart
+    version="v1.4.1" commitId="3f9807a" && curl -L https://github.com/openshift/origin/releases/download/${version}/openshift-origin-client-tools-${version}-${commitId}-linux-64bit.tar.gz | tar -f - -x -z --strip-components=1 -C ${GOPATH}/bin/ openshift-origin-client-tools-${version}+${commitId}-linux-64bit/oc
+  fi
+
+install:
+- true
+
+env:
+  global:
+  - secure: aJdsmnzKP4Ze/hXYv/qV65Qbv53rzlvSSV0sjy8y3iIfPkW3zTvoVafXA36x8hSaVP12BxZ9Ms2PiAjrougZYmGr8v3fr0F5xg7iIrhuB99sswGB37CmnbP/MnrJDrjarenhrIXcnpRT5PwsErsdhppxEP+dhXgw1lzTP2r4RN4jMKgBZdzKB4e3HfFbNZ12tdnY9Xey+VLj02EodQxmwVCHWVDFy4JwZwU9P+uL+6VSJopPaSWX+Ga8fu31RfymNzTc2P0mUgO9GBWMB0m/buz/MxlIVzM29AV47uBmZg2dDh9sWoIS12p9InTWV75JN9lfj040jsjrZ63ydiStyeBZ9Wf8irRxsXH3dZ4FJtIey7oDwObMRM20E7wln+93CNEWTQkmC9Gjz4JIap9zP1IR6SrnU+445xdmwwpw+G3JtDn+i/bpfvmse3RYOWyMUrnmSkrkOXn8PLMfc5ZB2vHZWF5KQQAaqqe6wCmii0cVGaEtpkdBdO+FqJ7UdS/F0VmGD11sEzutz4RIpYmYhz3gKe30bs9bZ6SjKgv8TsWTRKbMDv+2CMgAd/5xJcJx2/73Wb7FdzrNg4FNr6V3clN3aIEF9YCu/ph+49ahcU6jQURwz8NdAxDHVjGwhyI6UAz3GZAG5FP0ctyTjhlVxVcqMrAGZeBxKKFtGsHlyjc=
+  - secure: E8meCdl7+4Gj3UmDTx4FURqWSNal+K44dkaYrUZD5o7QsCqZgnk95G3t2/kvdpYNBHpmiVWo4FRWVsB4Ibv6Xd0jhwDeXZWnP5WckLsPecEYDDssbVLzsa58QxTpDYChR/xXel+fHcte+AvPWJbzr5c6ITEvnRq+1zEixD7wEIASKXdgM3PXYKlEnxVHAMXczvni+YA76rUFAGfes4ODjczLb81RxD1zWrueBoSQYdhUeEj9lhkk0AVw7oNSow4w221PUtnNZUgItHqfF0z5IUMDel57xaSzIXP8C4aKCsjATEd2QtsmCmFt99UxDc/M/8LOo3dWavqLZIXHTSGNQFl9vhJ2RhuX8SUoNP6rFDtow370ZNexYVsGSrFt68iceWFMPicrF2qMdqlPjhCStVi7DM4DhYTKxmF457f4R+3SuyuQNVMKhrWy5q789/0j+bN9EHZJXMU8hnBZy/5hYzOJ67AqAyff8IhtqiQQ0wzdadQsUtdpMLuOPrwsrJpdBYplozHbOaWJzUrH+YREuMS5qiLrB6dFBlNPibUPaPETRPhkMHDV46pCJwrpwnHv6u/UOtShAviR//iik+iqtiPvbnuXkWm42rPldjqDfJeSOFZmMbJOEL7lBxoVucg08FqSK4am0d37BD+avE7JY9s/oU9S64x5O0PXB0I6gwQ=
+  - secure: NAmKsCLZFaDj7t/D1MaWfzuDZfAbglbctJYPe9cDXmUwLHiPEIJGoGAYK9Zm99pO0VAjlRaIWlM4hhO01zD2BHYKg90RlJ4ncJOMDh5AU1+P0t+keAKb2qxcJBKm7QHaosOsRvbYB2Mkb74u2kfs+03k5NdIW/5kCdTximsGbN1Ujs1xb1iQyHlfouuZEVcaaQV5ueeQcfNfLMeZyzngRO7Yhxd500uuzK/IEI+NOqmdOrca++avVmSxwRcTIn5Olhuic6BO4+74XOl6urazwoc6SWjjN6JbxW2R1ovAkoorO5Ammo0Z+UxphJKMvTGmMNiBTRIkTOEL+3RE+1FZ7OxBc1f3IoZLYvP9jeR6M9JHYjBAYtQGPDjo/MRyGvCK+WnQ7fV22Nuh4iy3DkPfaiXg7COvdO/xRdqcj8Rl8NiEay4vc6RIT+c53G6wAU6LijGC5q+StPGmhlGNeyG+l1BlOafY8VhZ+fR9vb7FPD+XUHHmr+joazrZ2c5H9i6jnvb9cCiGsANXEwcVDV1CgRVgv1Ctze3oEslsiWn3iJxUncCPsPQpfuQtbj7a33m+3+bMK+nwiE1ZYsJlb14ZT6neHPBGU/XhTS/9iNA0Bd0Ijyp9POUNBcBBMTit9KcmVS/Tp0SECYWf1KLUXmPMQBVZC6Vr8bjIW9KwWeSveeo=
+
+before_script:
+- true
+
+script:
+- make -j64 install GOFLAGS=-race
+- make -j64 test GOFLAGS=-race
+- if [ ${AUTHORITATIVE} ]; then make -j64 image; fi
+- if [ ${AUTHORITATIVE} ]; then make -j64 checks; fi
+- |
+  if [ ${AUTHORITATIVE} ]; then
+    logfile=$(mktemp)
+    ngrok http -log stdout -log-level debug -log-format json 80 > ${logfile} &
+    domain=$((tail -n +0 -f ${logfile} || true) | grep --text -m 1 'Hostname' | sed -r 's/.*Hostname:([^] ]*).*/\1/')
+    echo "domain: ${domain}"
+    oc cluster up
+    oc new-project acme-asdf
+    oc login -u system:admin
+    oc adm policy add-cluster-role-to-user cluster-admin system:serviceaccount:acme-asdf:default
+    oc login -u developer -p developer
+    deploymentFile=$(mktemp)
+    sed -e 's/imagePullPolicy: IfNotPresent/imagePullPolicy: Never/' -e 's/value: "8"/value: "9"/' ./deploy/deploymentconfig-letsencrypt-staging.yaml > ${deploymentFile}
+    grep -q 'imagePullPolicy: Never' ${deploymentFile}
+    oc create -f ./deploy/service.yaml -f ${deploymentFile}
+    sleep 10
+    oc status -v
+    oc new-project test-asdf
+    make -j64 test-extended GOFLAGS=-race GO_ET_KUBECONFIG=~/.kube/config GO_ET_DOMAIN=${domain}
+  fi
+- if [ ${AUTHORITATIVE} ]; then oc logs dc/acme-controller -n acme-asdf; fi
+
+deploy:
+  provider: script
+  on:
+    branch: master
+    condition: ${AUTHORITATIVE} = true
+  script:
+  - |
+    docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWD}
+    docker push docker.io/tnozicka/openshift-acme
+
+notifications:
+  email: false
