@@ -72,15 +72,12 @@ script:
   fi
 - if [ ${AUTHORITATIVE} ]; then oc logs dc/acme-controller -n acme-asdf; fi
 
-deploy:
-  provider: script
-  on:
-    branch: master
-    condition: ${AUTHORITATIVE} = true
-  script:
-  - |
-    docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWD}
+after_success:
+- |
+  if [[ ${AUTHORITATIVE} && "${TRAVIS_BRANCH}" == "master" && "${TRAVIS_PULL_REQUEST}"=="false" ]]; then
+    docker login -u="${DOCKER_USER}" -p="${DOCKER_PASSWD}"
     docker push docker.io/tnozicka/openshift-acme
+  fi
 
 notifications:
   email: false
