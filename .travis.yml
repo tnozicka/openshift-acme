@@ -72,6 +72,11 @@ script:
   fi
 - if [ ${AUTHORITATIVE} ]; then oc logs dc/acme-controller -n acme-asdf; fi
 
+after_failure:
+- |
+  oc login -u system:admin
+  oc logs -n default dc/router
+
 after_success:
 - |
   if [[ ${AUTHORITATIVE} && "${TRAVIS_BRANCH}" == "master" && "${TRAVIS_PULL_REQUEST}"=="false" ]]; then
