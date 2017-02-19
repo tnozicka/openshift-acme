@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Route
+metadata:
+  annotations:
+    kubernetes.io/tls-acme: "true"
+  name: mydomain
+spec:
+  host: mydomain.io 
+  to:
+    kind: Service
+    name: myservicename

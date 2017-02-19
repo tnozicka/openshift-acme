@@ -8,7 +8,7 @@ Controller should be stateless service to keep it as easy to run as possible. Th
 Requires no additional management as it uses internal Router/Ingress for the challenge.
 
 === dns-01
-You need to have a plugin to allow changing DNS at your provider and also configure a Secret as a credentials for it.
+You need to have a plugin to allow changing DNS at your provider and also configure a Secret with credentials for it.
 
 
 [source,yaml]
