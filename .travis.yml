@@ -59,7 +59,8 @@ script:
     oc cluster up
     oc new-project acme-asdf
     oc login -u system:admin
-    oc adm policy add-cluster-role-to-user cluster-admin system:serviceaccount:acme-asdf:default
+    oc create -f ./deploy/clusterrole.yaml
+    oc adm policy add-cluster-role-to-user acme-controller system:serviceaccount:acme-asdf:default
     oc login -u developer -p developer
     deploymentFile=$(mktemp)
     sed -e 's/imagePullPolicy: IfNotPresent/imagePullPolicy: Never/' -e 's/value: "8"/value: "9"/' ./deploy/deploymentconfig-letsencrypt-staging.yaml > ${deploymentFile}

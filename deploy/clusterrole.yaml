@@ -1,0 +1,24 @@
+kind: ClusterRole
+metadata:
+  name: acme-controller
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  - endpoints/restricted
+  - events
+  - routes
+  - secrets
+  - services
+  verbs:
+  - '*'
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  - projects
+  verbs:
+  - get
+  - list
+  - watch
