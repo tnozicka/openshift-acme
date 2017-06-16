@@ -109,7 +109,7 @@ func TestBasic(t *testing.T) {
 	}
 	defer w.Stop()
 
-	timeout := 30 * time.Second
+	timeout := 60 * time.Second
 loop:
 	for {
 		select {
