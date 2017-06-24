@@ -191,6 +191,8 @@ func (r *Route) Expose(a *acmelib.Client, domain string, token string) error {
 			route.Spec.To.Kind = "Service"
 			route.Spec.To.Name = tmpName
 			route.Spec.To.Weight = 100
+			route.Spec.Tls.Termination = "edge"
+			route.Spec.Tls.InsecureEdgeTerminationPolicy = "Allow"
 		}
 
 		for i := 1; i <= maxTries; i++ {
