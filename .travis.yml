@@ -87,6 +87,9 @@ after_failure:
 after_success:
 - |
   if [[ ${AUTHORITATIVE} && "${TRAVIS_BRANCH}" == "master" && "${TRAVIS_PULL_REQUEST}"=="false" ]]; then
+    echo ${AUTHORITATIVE}
+    echo ${TRAVIS_BRANCH}
+    echo ${TRAVIS_PULL_REQUEST}
     docker login -u="${DOCKER_USER}" -p="${DOCKER_PASSWD}"
     docker push docker.io/tnozicka/openshift-acme
   fi
