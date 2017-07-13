@@ -130,8 +130,8 @@ func (o *RouteObject) UpdateCertificate(c *cert.Certificate) error {
 		secret.Annotations = map[string]string{}
 	}
 	secret.Annotations["kubernetes.io/tls-acme.last-update-time"] = time.Now().Format(time.RFC3339)
-	secret.Annotations["kubernetes.io/tls-acme.valid-not-before"] = time.Now().Format(time.RFC3339)
-	secret.Annotations["kubernetes.io/tls-acme.valid-not-after"] = time.Now().Format(time.RFC3339)
+	secret.Annotations["kubernetes.io/tls-acme.valid-not-before"] = c.Certificate.NotBefore.Format(time.RFC3339)
+	secret.Annotations["kubernetes.io/tls-acme.valid-not-after"] = c.Certificate.NotAfter.Format(time.RFC3339)
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
@@ -157,8 +157,8 @@ func (o *RouteObject) UpdateCertificate(c *cert.Certificate) error {
 		route.Annotations = map[string]string{}
 	}
 	route.Annotations["kubernetes.io/tls-acme.last-update-time"] = time.Now().Format(time.RFC3339)
-	secret.Annotations["kubernetes.io/tls-acme.valid-not-before"] = time.Now().Format(time.RFC3339)
-	secret.Annotations["kubernetes.io/tls-acme.valid-not-after"] = time.Now().Format(time.RFC3339)
+	secret.Annotations["kubernetes.io/tls-acme.valid-not-before"] = c.Certificate.NotBefore.Format(time.RFC3339)
+	secret.Annotations["kubernetes.io/tls-acme.valid-not-after"] = c.Certificate.NotAfter.Format(time.RFC3339)
 	if route.Spec.Tls == nil {
 		route.Spec.Tls = &oapi.TlsConfig{}
 	}
