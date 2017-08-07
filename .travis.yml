@@ -9,7 +9,7 @@ go:
 matrix:
   include:
   - go: 1.8
-    env: AUTHORITATIVE=true OPENSHIFT_VERSIONS="v1.4.1 v1.5.1 v3.6.0-alpha.2"
+    env: AUTHORITATIVE=true OPENSHIFT_VERSIONS="v1.4.1 v1.5.1 v3.6.0"
     sudo: required
     services:
      - docker
@@ -31,7 +31,7 @@ before_install:
     sudo mv ${tmp} /etc/default/docker
     sudo mount --make-shared /
     sudo service docker restart
-    version="v3.6.0-alpha.2" commitId="3c221d5" && curl -L https://github.com/openshift/origin/releases/download/${version}/openshift-origin-client-tools-${version}-${commitId}-linux-64bit.tar.gz | tar -f - -x -z --strip-components=1 -C ${GOPATH}/bin/ openshift-origin-client-tools-${version}-${commitId}-linux-64bit/oc
+    version="v3.6.0" commitId="c4dd4cf" && curl -L https://github.com/openshift/origin/releases/download/${version}/openshift-origin-client-tools-${version}-${commitId}-linux-64bit.tar.gz | tar -f - -x -z --strip-components=1 -C ${GOPATH}/bin/ openshift-origin-client-tools-${version}-${commitId}-linux-64bit/oc
   fi
 
 install:
