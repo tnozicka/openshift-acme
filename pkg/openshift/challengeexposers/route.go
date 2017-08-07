@@ -227,7 +227,7 @@ func (r *Route) Expose(a *acmelib.Client, domain string, token string) error {
 							log.Warnf("route challenge exposer: creating route %s/%s failed because of collision: %s", tmpName, namespace, err)
 							continue
 						} else {
-							log.Errorf("route challenge exposer: creating route %s/%s failed: %s", tmpName, namespace, err)
+							log.Errorf("route challenge exposer: creating route %s/%s failed: %s; raw: %s", tmpName, namespace, err, rawRoute)
 							return
 						}
 					}

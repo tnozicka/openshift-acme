@@ -4,11 +4,14 @@ metadata:
 rules:
 - apiGroups:
   - ""
+  - "route.openshift.io"
   resources:
   - endpoints
   - endpoints/restricted
   - events
   - routes
+  - routes/custom-host
+  - routes/status
   - secrets
   - services
   verbs:
