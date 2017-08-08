@@ -9,7 +9,7 @@ GOIMPORTS :=goimports -e
 GOFLAGS :=
 
 GO_FILES :=$(shell find . -name '*.go' -not -path './vendor/*' -print)
-GO_PACKAGES := ./ ./cmd/... ./pkg/...
+GO_PACKAGES := ./cmd/... ./pkg/...
 GO_PACKAGES_TEST :=./test/...
 GO_PACKAGES_ALL :=$(GOPACKAGES) $(GO_PACKAGES_TEST)
 GO_IMPORT_PATH :=github.com/tnozicka/openshift-acme
@@ -29,7 +29,8 @@ install:
 
 .PHONY: test
 test:
-	go test $(GOFLAGS) $(GO_PACKAGES) 
+	go test -i -v $(GOFLAGS) $(GO_PACKAGES)
+	go test $(GOFLAGS) $(GO_PACKAGES)
 
 .PHONY: test-extended
 test-extended:
@@ -54,12 +55,12 @@ check-goimports:
 check-govet:
 	go vet $(GO_PACKAGES_ALL)
 
-.PHONY: check-strip-vendor
-check-strip-vendor:
-	@export vendors && vendors=$$(find ./vendor/ -mindepth 1 -type d -name 'vendor') && \
-	if [ -n "$${vendors}" ]; then printf "ERROR: There are nested vendor directories: \n"; printf "%s\n" $${vendors[@]}; exit 1; fi
-	@export files && files=$$($(do-strip-vendor) --dryrun) && \
-	if [ -n "$${files}" ]; then printf "ERROR: There are unused files in ./vendor/\nRun 'make strip-vendor' to fix it.\n"; exit 1; fi
+.PHONY: check-vendor
+check-vendor:
+	+@export tmpgopath tmpdir && tmpgopath=$$(mktemp -d) && tmpdir=$${tmpgopath}/src/$(GO_IMPORT_PATH) && \
+	mkdir -p $${tmpdir}/ && echo "Copying sources to $${tmpdir} to check ./vendor directory..." && cp -r ./ $${tmpdir} && \
+	GOPATH=$${tmpgopath} make -C $${tmpdir} ensure-vendor && \
+	(r=$$(diff -r ./ $${tmpdir}) || (printf "ERROR: The ./vendor folder doesn't reflect Gopkg.{toml,lock} or it hasn't been pruned.\nRun 'make ensure-vendor' to fix it.\n"; exit 1);)
 
 .PHONY: format
 format: format-gofmt format-goimports
@@ -72,16 +73,15 @@ format-gofmt:
 format-goimports:
 	$(GOIMPORTS) -w $(GO_FILES)
 
-do-strip-vendor :=glide-vc --only-code --no-tests --no-test-imports --no-legal-files
+.PHONY: ensure-vendor
+ensure-vendor:
+	dep ensure
+	dep prune
 
 .PHONY: update-vendor
 update-vendor:
-	glide update --strip-vendor
-	$(do-strip-vendor)
-
-.PHONY: strip-vendor
-strip-vendor:
-	$(do-strip-vendor)
+	dep ensure -update
+	dep prune
 
 .PHONY: image
 image:

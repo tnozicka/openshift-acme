@@ -20,8 +20,7 @@ matrix:
 
 before_install:
 - go get golang.org/x/tools/cmd/goimports
-- go get github.com/Masterminds/glide
-- go get github.com/sgotti/glide-vc
+- go get github.com/golang/dep/cmd/dep
 - go get github.com/openshift/source-to-image/cmd/s2i
 - |
   if [ ${AUTHORITATIVE} ]; then
@@ -49,8 +48,9 @@ before_script:
 script:
 - make -j64 install GOFLAGS=-race
 - make -j64 test GOFLAGS=-race
-- if [ ${AUTHORITATIVE} ]; then make -j64 image; fi
 - if [ ${AUTHORITATIVE} ]; then make -j64 checks; fi
+- if [ ${AUTHORITATIVE} ]; then make -j64 check-vendor; fi
+- if [ ${AUTHORITATIVE} ]; then make -j64 image; fi
 - |
   set -e
   if [ ${AUTHORITATIVE} ]; then
