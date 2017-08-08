@@ -355,10 +355,17 @@ func (l *logger) SetCallerInfoLevels(levels ...Level) {
 }
 
 // SetCallerSkipDiff adds the provided diff to the caller SkipLevel values.
-// This is used when wrapping this library, you can set ths to increase the
+// This is used when wrapping this library, you can set this to increase the
 // skip values passed to Caller that retrieves the file + line number info.
 func (l *logger) SetCallerSkipDiff(diff uint8) {
 	skipLevel += int(diff)
+}
+
+// SetExitFunc sets the provided function as the exit function used in Fatal()
+// and Fatalf(). This is primarily used when wrapping this library, you can set
+// this to to enable testing (with coverage) of your Fatal() and Fatalf() methods.
+func (l *logger) SetExitFunc(fn func(code int)) {
+	exitFunc = fn
 }
 
 // HasHandlers returns if any handlers have been registered.

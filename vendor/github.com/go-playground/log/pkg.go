@@ -223,6 +223,13 @@ func SetCallerSkipDiff(diff uint8) {
 	Logger.SetCallerSkipDiff(diff)
 }
 
+// SetExitFunc sets the provided function as the exit function used in Fatal()
+// and Fatalf(). This is primarily used when wrapping this library, you can set
+// this to to enable testing (with coverage) of your Fatal() and Fatalf() methods.
+func SetExitFunc(fn func(code int)) {
+	exitFunc = fn
+}
+
 // HasHandlers returns if any handlers have been registered.
 func HasHandlers() bool {
 	return Logger.HasHandlers()
