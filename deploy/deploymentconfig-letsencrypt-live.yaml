@@ -26,3 +26,4 @@ spec:
           value: "8"
         - name: OPENSHIFT_ACME_SELFSERVICENAME
           value: "acme-controller"
+      serviceAccount: acme

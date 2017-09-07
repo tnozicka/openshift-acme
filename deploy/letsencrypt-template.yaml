@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Template
+labels:
+  template: letsencrypt-template
+metadata:
+  annotations:
+    openshift.io/display-name: Let's Encrypt,
+    description: Template for Deploying a Let's Encrypt Controller.
+    tags: infrastructure,letsencrypt,controller
+    template.openshift.io/documentation-url: https://github.com/tnozicka/openshift-acme.git
+  name: letsencrypt
+objects:
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: ${SERVICEACCOUNT_NAME}
+- kind: Service
+  apiVersion: v1
+  metadata:
+    name: ${NAME}
+  spec:
+    selector:
+      app: ${NAME}
+    ports:
+    - name: http
+      protocol: TCP 
+      port: 80
+      targetPort: 5000
+- kind: Deployment
+  apiVersion: extensions/v1beta1
+  metadata:
+    name: ${NAME}
+    labels:
+      app: ${NAME}
+  spec:
+    replicas: 1
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: ${NAME}
+      spec:
+        containers:
+        - name: "${NAME}"
+          image: "${IMAGE_NAME}:${IMAGE_VERSION}"
+          imagePullPolicy: IfNotPresent
+          ports:
+          - containerPort: 80
+          env:
+          - name: OPENSHIFT_ACME_ACMEURL
+            value: "${OPENSHIFT_ACME_ACMEURL}"
+          - name: OPENSHIFT_ACME_LOGLEVEL
+            value: "${OPENSHIFT_ACME_ACMEURL}"
+          - name: OPENSHIFT_ACME_SELFSERVICENAME
+            value: "${NAME}"
+        serviceAccount: ${SERVICEACCOUNT_NAME}
+parameters:
+- description: Name of the Application
+  name: NAME
+  value: acme-controller
+  required: true
+- description: Name of the Application
+  name: SERVICEACCOUNT_NAME
+  value: acme
+  required: true
+- description: "Name of the Let's Encrypt Image"
+  name: IMAGE_NAME
+  value: docker.io/tnozicka/openshift-acme
+  required: true
+- description: Version of the Let's Encrypt Image
+  name: IMAGE_VERSION
+  value: latest
+  required: true
+- description: URL of the Let's Encrypt Endpoint
+  name: OPENSHIFT_ACME_ACMEURL
+  value: https://acme-v01.api.letsencrypt.org/directory
+  required: true
+- description: Application Log Level
+  name: OPENSHIFT_ACME_ACMEURL
+  value: "8"
+  required: true
