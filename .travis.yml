@@ -4,11 +4,12 @@ go_import_path: github.com/tnozicka/openshift-acme
 
 go:
 - 1.7
+- 1.8
 - master
 
 matrix:
   include:
-  - go: 1.8
+  - go: 1.9
     env: AUTHORITATIVE=true OPENSHIFT_VERSIONS="v1.4.1 v1.5.1 v3.6.0"
     sudo: required
     services:
@@ -19,11 +20,11 @@ matrix:
         - bsdtar
 
 before_install:
-- go get golang.org/x/tools/cmd/goimports
-- go get github.com/golang/dep/cmd/dep
-- go get github.com/openshift/source-to-image/cmd/s2i
 - |
   if [ ${AUTHORITATIVE} ]; then
+    go get golang.org/x/tools/cmd/goimports
+    go get github.com/golang/dep/cmd/dep
+    go get github.com/openshift/source-to-image/cmd/s2i
     curl -L https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip | bsdtar -xvf- -C ${GOPATH}/bin/ && chmod +x ${GOPATH}/bin/ngrok
     tmp=`mktemp`
     echo 'DOCKER_OPTS="$DOCKER_OPTS --insecure-registry 172.30.0.0/16"' > ${tmp}
