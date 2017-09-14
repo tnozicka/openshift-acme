@@ -14,6 +14,7 @@ import (
 	acme_controller "github.com/tnozicka/openshift-acme/pkg/openshift/controllers/acme"
 	"github.com/tnozicka/openshift-acme/pkg/openshift/untypedclient"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
+	kerrors "k8s.io/client-go/pkg/api/errors"
 	"k8s.io/client-go/pkg/api/unversioned"
 	api_v1 "k8s.io/client-go/pkg/api/v1"
 )
@@ -240,7 +241,9 @@ func (rc *RouteController) UpdateSelfServiceEndpointSubsets() (err error) {
 	default:
 		// for regular service we will use static and load-balanced ClusterIP
 		endpoints, err := rc.client.Endpoints(rc.selfService.Namespace).Get(rc.selfService.Name)
-		if err == nil {
+		if err != nil && !kerrors.IsNotFound(err) {
+			return fmt.Errorf("RouteController encountered an error connecting to its endpoints: '%s'", err)
+		} else if len(endpoints.Subsets) > 0 {
 			rc.selfServiceEndpointSubsets = endpoints.Subsets
 		} else {
 			ports := []api_v1.EndpointPort{}
