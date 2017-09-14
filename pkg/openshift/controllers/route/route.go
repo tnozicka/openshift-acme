@@ -239,20 +239,24 @@ func (rc *RouteController) UpdateSelfServiceEndpointSubsets() (err error) {
 		rc.selfServiceEndpointSubsets = endpoints.Subsets
 	default:
 		// for regular service we will use static and load-balanced ClusterIP
-		ports := []api_v1.EndpointPort{}
-		for _, svc_port := range service.Spec.Ports {
-			ports = append(ports, api_v1.EndpointPort{Port: svc_port.Port})
-		}
-
-		rc.selfServiceEndpointSubsets = []api_v1.EndpointSubset{
-			{
-				Addresses: []api_v1.EndpointAddress{
-					{
-						IP: service.Spec.ClusterIP,
+		endpoints, err := rc.client.Endpoints(rc.selfService.Namespace).Get(rc.selfService.Name)
+		if err == nil {
+			rc.selfServiceEndpointSubsets = endpoints.Subsets
+		} else {
+			ports := []api_v1.EndpointPort{}
+			for _, svc_port := range service.Spec.Ports {
+				ports = append(ports, api_v1.EndpointPort{Port: svc_port.Port})
+			}
+			rc.selfServiceEndpointSubsets = []api_v1.EndpointSubset{
+				{
+					Addresses: []api_v1.EndpointAddress{
+						{
+							IP: service.Spec.ClusterIP,
+						},
 					},
+					Ports: ports,
 				},
-				Ports: ports,
-			},
+			}
 		}
 	}
 
