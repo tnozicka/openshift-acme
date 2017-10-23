@@ -26,11 +26,11 @@ oc create -fhttps://github.com/tnozicka/openshift-acme/raw/master/deploy/{cluste
 #### Privileges
 Because the controller needs to watch for events across namespaces and write certificate objects to them, depending on the settings, it needs elevated privileges. One way to allow necessary privileges is shown bellow, but you might set up different policy if you like.
 ```bash
-oc adm policy add-cluster-role-to-user acme-controller system:serviceaccount:acme:default
+oc adm policy add-cluster-role-to-user acme-controller -z default
 ```
 If, for some reason, this doesn't work for you, please file an issue and you can fallback to elevated privileges by using the default cluster-admin role:
 ```bash
-oc adm policy add-cluster-role-to-user cluster-admin system:serviceaccount:acme:default
+oc adm policy add-cluster-role-to-user cluster-admin -z default
 ```
 
 ### Kubernetes
