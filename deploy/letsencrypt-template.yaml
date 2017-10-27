@@ -51,7 +51,7 @@ objects:
           - name: OPENSHIFT_ACME_ACMEURL
             value: "${OPENSHIFT_ACME_ACMEURL}"
           - name: OPENSHIFT_ACME_LOGLEVEL
-            value: "${OPENSHIFT_ACME_ACMEURL}"
+            value: "${OPENSHIFT_ACME_LOGLEVEL}"
           - name: OPENSHIFT_ACME_SELFSERVICENAME
             value: "${NAME}"
         serviceAccount: ${SERVICEACCOUNT_NAME}
@@ -77,6 +77,6 @@ parameters:
   value: https://acme-v01.api.letsencrypt.org/directory
   required: true
 - description: Application Log Level
-  name: OPENSHIFT_ACME_ACMEURL
+  name: OPENSHIFT_ACME_LOGLEVEL
   value: "8"
   required: true
