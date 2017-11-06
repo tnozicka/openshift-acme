@@ -3,13 +3,13 @@ language: go
 go_import_path: github.com/tnozicka/openshift-acme
 
 go:
-- 1.7
-- 1.8
+- 1.7.x
+- 1.8.x
 - master
 
 matrix:
   include:
-  - go: 1.9
+  - go: 1.9.x
     env: AUTHORITATIVE=true OPENSHIFT_VERSIONS="v1.4.1 v1.5.1 v3.6.0"
     sudo: required
     services:
