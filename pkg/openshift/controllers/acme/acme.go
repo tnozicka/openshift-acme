@@ -67,7 +67,7 @@ loop:
 	for {
 		select {
 		case <-time.After(ac.retryCheckInterval):
-			log.Debug("Retry check triggered by scheadule.")
+			log.Debug("Retry check triggered by schedule.")
 
 			certEntries := ac.Db.GetCertEntryShallowSnapshot()
 			for _, certEntry := range certEntries {
@@ -112,7 +112,7 @@ loop:
 	for {
 		select {
 		case <-time.After(ac.renewalCheckInterval):
-			log.Debug("Renewal check triggered by scheadule.")
+			log.Debug("Renewal check triggered by schedule.")
 			now := time.Now()
 
 			certEntries := ac.Db.GetCertEntryShallowSnapshot()
@@ -263,7 +263,7 @@ func (ac *AcmeController) Done(o AcmeObject) (err error) {
 
 func (ac *AcmeController) BootstrapDB(updateAccounts bool, updateStatus bool) error {
 	for _, namespace := range ac.watchNamespaces {
-		log.Debugf("AcmeCotroller: Bootstraping namespace '%s'", namespace)
+		log.Debugf("AcmeController: Bootstrapping namespace '%s'", namespace)
 		err := ac.Db.Bootstrap(ac.ctx, namespace, ac.acmeDirectoryUrl, updateAccounts, updateStatus)
 		if err != nil {
 			return err
