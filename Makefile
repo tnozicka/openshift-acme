@@ -6,11 +6,11 @@ SHELL :=/bin/bash
 
 GOFMT :=gofmt -s
 GOIMPORTS :=goimports -e
-GOFLAGS :=
+GOFLAGS :=-v
+TEST_FLAGS :=-ginkgo.v
 
 GO_FILES :=$(shell find . -name '*.go' -not -path './vendor/*' -print)
 GO_PACKAGES := ./cmd/... ./pkg/...
-GO_PACKAGES_TEST :=./test/...
 GO_PACKAGES_ALL :=$(GOPACKAGES) $(GO_PACKAGES_TEST)
 GO_IMPORT_PATH :=github.com/tnozicka/openshift-acme
 IMAGE_NAME :=docker.io/tnozicka/openshift-acme
@@ -29,15 +29,14 @@ install:
 
 .PHONY: test
 test:
-	go test -i -v $(GOFLAGS) $(GO_PACKAGES)
 	go test $(GOFLAGS) $(GO_PACKAGES)
 
 .PHONY: test-extended
 test-extended:
-	go test $(GOFLAGS) $(GO_PACKAGES_TEST) -kubeconfig $(GO_ET_KUBECONFIG) -domain $(GO_ET_DOMAIN)
+	go test $(GOFLAGS) ./test/e2e/openshift -args $(TEST_FLAGS)
 
-.PHONY: checks
-checks: check-gofmt check-goimports check-govet
+.PHONY: check
+check: check-gofmt check-goimports check-govet check-deploy-files
 
 .PHONY: check-gofmt
 check-gofmt:
@@ -55,12 +54,19 @@ check-goimports:
 check-govet:
 	go vet $(GO_PACKAGES_ALL)
 
+.PHONY: check-deploy-files
+check-deploy-files:
+	hack/diff-deploy-files.sh $(shell mktemp -d)
+
+.PHONY: update-deploy-files
+update-deploy-files:
+	mv ./deploy/.diffs/* $(shell mktemp -d) || true
+	hack/diff-deploy-files.sh ./deploy/.diffs
+
 .PHONY: check-vendor
 check-vendor:
-	+@export tmpgopath tmpdir && tmpgopath=$$(mktemp -d) && tmpdir=$${tmpgopath}/src/$(GO_IMPORT_PATH) && \
-	mkdir -p $${tmpdir}/ && echo "Copying sources to $${tmpdir} to check ./vendor directory..." && cp -r ./ $${tmpdir} && \
-	GOPATH=$${tmpgopath} make -C $${tmpdir} ensure-vendor && \
-	(r=$$(diff -r ./ $${tmpdir}) || (printf "ERROR: The ./vendor folder doesn't reflect Gopkg.{toml,lock} or it hasn't been pruned.\nRun 'make ensure-vendor' to fix it.\n"; exit 1);)
+	@export vendors && vendors=$$(find ./vendor/ -mindepth 1 -type d -name 'vendor') && \
+	if [ -n "$${vendors}" ]; then printf "ERROR: There are nested vendor directories: \n"; printf "%s\n" $${vendors[@]}; exit 1; fi
 
 .PHONY: format
 format: format-gofmt format-goimports
@@ -73,17 +79,11 @@ format-gofmt:
 format-goimports:
 	$(GOIMPORTS) -w $(GO_FILES)
 
-.PHONY: ensure-vendor
-ensure-vendor:
-	dep ensure
-	dep prune
-
 .PHONY: update-vendor
 update-vendor:
-	dep ensure -update
-	dep prune
+	glide update --strip-vendor
 
 .PHONY: image
 image:
-	s2i build . docker.io/tnozicka/s2i-centos7-golang $(IMAGE_NAME) -e APP_URI=$(GO_IMPORT_PATH) --runtime-image=docker.io/tnozicka/s2i-centos7-golang-runtime --runtime-artifact=/opt/app-root/src/bin/app:bin/
+	s2i build . --copy docker.io/tnozicka/s2i-centos7-golang $(IMAGE_NAME) -e APP_URI=$(GO_IMPORT_PATH) --runtime-image=docker.io/tnozicka/s2i-centos7-golang-runtime --runtime-artifact=/opt/app-root/src/bin/app:bin/
 

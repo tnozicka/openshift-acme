@@ -3,10 +3,15 @@ apiVersion: v1
 metadata:
   name: acme-controller
 spec:
-  clusterIP: None
+  selector:
+    app: sshd
   ports:
+  - name: ssh
+    protocol: TCP 
+    port: 2222
+    targetPort: 2222
   - name: http
     protocol: TCP 
     port: 80
-    targetPort: 80
+    targetPort: 5000
 
