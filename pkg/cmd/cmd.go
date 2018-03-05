@@ -2,47 +2,55 @@ package cmd
 
 import (
 	"context"
-	"errors"
+	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
+	"time"
 
-	"github.com/go-playground/log"
-	"github.com/go-playground/log/handlers/console"
+	"github.com/golang/glog"
+	routev1 "github.com/openshift/api/route/v1"
+	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
+	routescheme "github.com/openshift/client-go/route/clientset/versioned/scheme"
+	routeinformersv1 "github.com/openshift/client-go/route/informers/externalversions/route/v1"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/tnozicka/openshift-acme/pkg/acme"
-	"github.com/tnozicka/openshift-acme/pkg/acme/challengeexposers"
-	cmdutil "github.com/tnozicka/openshift-acme/pkg/cmd/util"
-	acme_controller "github.com/tnozicka/openshift-acme/pkg/openshift/controllers/acme"
-	route_controller "github.com/tnozicka/openshift-acme/pkg/openshift/controllers/route"
+	kvalidation "k8s.io/apimachinery/pkg/api/validation"
+	"k8s.io/apimachinery/pkg/labels"
+	kvalidationutil "k8s.io/apimachinery/pkg/util/validation"
+	kcoreinformersv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	kcorelistersv1 "k8s.io/client-go/listers/core/v1"
+	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/tnozicka/openshift-acme/pkg/acme/challengeexposers"
+	acmeclientbuilder "github.com/tnozicka/openshift-acme/pkg/acme/client/builder"
+	cmdutil "github.com/tnozicka/openshift-acme/pkg/cmd/util"
+	routecontroller "github.com/tnozicka/openshift-acme/pkg/controllers/route"
+	"github.com/tnozicka/openshift-acme/pkg/signals"
 )
 
 const (
-	Flag_LogLevel_Key             = "loglevel"
-	Flag_Kubeconfig_Key           = "kubeconfig"
-	Flag_Masterurl_Key            = "masterurl"
-	Flag_Listen_Key               = "listen"
-	Flag_Acmeurl_Key              = "acmeurl"
-	Flag_Selfservicename_Key      = "selfservicename"
-	Flag_Selfservicenamespace_Key = "selfservicenamespace"
-	Flag_Watchnamespace_Key       = "watch-namespace"
+	DefaultLoglevel                  = 4
+	Flag_LogLevel_Key                = "loglevel"
+	Flag_Kubeconfig_Key              = "kubeconfig"
+	Flag_Acmeurl_Key                 = "acmeurl"
+	Flag_SelfNamespace_Key           = "selfnamespace"
+	Flag_ExposerIP                   = "exposer-ip"
+	Flag_ExposerPort                 = "exposer-port"
+	Flag_ExposerListenIP             = "exposer-listen-ip"
+	Flag_Namespace_Key               = "namespace"
+	Flag_AccountName_Key             = "account-name"
+	Flag_DefaultRouteTermination_Key = "default-route-termination"
+	SelfLabels_Path                  = "/dapi/labels"
+	ResyncPeriod                     = 10 * time.Minute
+	Workers                          = 10
 )
-
-func loglevelToLevels(level int) []log.Level {
-	if level >= len(log.AllLevels) {
-		level = len(log.AllLevels)
-	}
-
-	r := []log.Level{}
-	r = append(r, log.AllLevels[len(log.AllLevels)-level:]...)
-	return r
-}
 
 func NewOpenShiftAcmeCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 	v := viper.New()
@@ -65,19 +73,13 @@ func NewOpenShiftAcmeCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// We have to bind Viper in Run because there is only one instance to avoid collisions
-			cmdutil.BindViper(v, cmd.PersistentFlags(), Flag_LogLevel_Key)
-			cmdutil.BindViper(v, cmd.PersistentFlags(), Flag_Kubeconfig_Key)
-			cmdutil.BindViper(v, cmd.PersistentFlags(), Flag_Masterurl_Key)
-			cmdutil.BindViper(v, cmd.PersistentFlags(), Flag_Listen_Key)
-			cmdutil.BindViper(v, cmd.PersistentFlags(), Flag_Acmeurl_Key)
-			cmdutil.BindViper(v, cmd.PersistentFlags(), Flag_Selfservicename_Key)
-			cmdutil.BindViper(v, cmd.PersistentFlags(), Flag_Selfservicenamespace_Key)
-			cmdutil.BindViper(v, cmd.PersistentFlags(), Flag_Watchnamespace_Key)
+			v.BindPFlags(cmd.PersistentFlags())
 
-			// Setup logger
-			loglevel := v.GetInt(Flag_LogLevel_Key)
-			cLog := console.New()
-			log.RegisterHandler(cLog, loglevelToLevels(loglevel)...)
+			if v.IsSet(Flag_LogLevel_Key) {
+				// The flag itself needs to be set for glog to recognize it.
+				// Makes sure loglevel can be set by environment variable as well.
+				cmd.PersistentFlags().Set(Flag_LogLevel_Key, v.GetString(Flag_LogLevel_Key))
+			}
 
 			return nil
 		},
@@ -85,119 +87,205 @@ func NewOpenShiftAcmeCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 		SilenceUsage:  true,
 	}
 
-	rootCmd.PersistentFlags().Int8P(Flag_LogLevel_Key, "", 8, "Set loglevel")
 	rootCmd.PersistentFlags().StringP(Flag_Kubeconfig_Key, "", "", "Absolute path to the kubeconfig file")
-	rootCmd.PersistentFlags().StringP(Flag_Masterurl_Key, "", "", "Kubernetes master URL")
-	rootCmd.PersistentFlags().StringP(Flag_Listen_Key, "", "0.0.0.0:5000", "Listen address for http-01 server")
 	rootCmd.PersistentFlags().StringP(Flag_Acmeurl_Key, "", "https://acme-staging.api.letsencrypt.org/directory", "ACME URL like https://acme-v01.api.letsencrypt.org/directory")
-	rootCmd.PersistentFlags().StringP(Flag_Selfservicename_Key, "", "acme-controller", "Name of the service pointing to a pod with this program.")
-	rootCmd.PersistentFlags().StringSliceP(Flag_Watchnamespace_Key, "w", []string{""}, "Restrics controller to namespace. If not specified controller watches for routes accross namespaces.")
-	rootCmd.PersistentFlags().StringP(Flag_Selfservicenamespace_Key, "", "", "Namespace of the service pointing to a pod with this program. Defaults to current namespace this program is running inside; if run outside of the cluster defaults to 'default' namespace")
+	rootCmd.PersistentFlags().StringP(Flag_Namespace_Key, "n", "", "Restricts controller to namespace. If not specified controller watches all namespaces.")
+	rootCmd.PersistentFlags().StringP(Flag_AccountName_Key, "", "acme-account", "Name of the Secret holding ACME account.")
+	rootCmd.PersistentFlags().StringP(Flag_ExposerIP, "", "", "IP address on which this controller can be reached inside the cluster.")
+	rootCmd.PersistentFlags().Int32P(Flag_ExposerPort, "", 5000, "Port for http-01 server")
+	rootCmd.PersistentFlags().StringP(Flag_ExposerListenIP, "", "0.0.0.0", "Listen address for http-01 server")
+	rootCmd.PersistentFlags().StringP(Flag_SelfNamespace_Key, "", "", "Namespace where this controller and associated objects are deployed to. Defaults to current namespace if this program is running inside of the cluster.")
+	rootCmd.PersistentFlags().StringP(Flag_DefaultRouteTermination_Key, "", string(routev1.InsecureEdgeTerminationPolicyRedirect), "Default TLS termination of the route.")
+
+	from := flag.CommandLine
+	if flag := from.Lookup("v"); flag != nil {
+		level := flag.Value.(*glog.Level)
+		levelPtr := (*int32)(level)
+		rootCmd.PersistentFlags().Int32Var(levelPtr, Flag_LogLevel_Key, DefaultLoglevel, "Set the level of log output (0-10)")
+		if rootCmd.PersistentFlags().Lookup("v") == nil {
+			rootCmd.PersistentFlags().Int32Var(levelPtr, "v", DefaultLoglevel, "Set the level of log output (0-10)")
+		}
+		rootCmd.PersistentFlags().Lookup("v").Hidden = true
+	}
+	flag.Set("logtostderr", "true")
+	// Make glog happy
+	flag.CommandLine.Parse([]string{})
 
 	return rootCmd
 }
 
+func getClientConfig(kubeConfigPath string) *restclient.Config {
+	if kubeConfigPath == "" {
+		glog.Infof("No kubeconfig specified, using InClusterConfig.")
+		config, err := restclient.InClusterConfig()
+		if err != nil {
+			glog.Fatalf("Failed to create InClusterConfig: %v", err)
+		}
+		return config
+	}
+
+	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeConfigPath}, &clientcmd.ConfigOverrides{}).ClientConfig()
+	if err != nil {
+		glog.Fatalf("Failed to create config from kubeConfigPath (%s): %v", kubeConfigPath, err)
+	}
+	return config
+}
+
 func RunServer(v *viper.Viper, cmd *cobra.Command, out io.Writer) error {
-	defer log.Trace("Controller finished").End()
-	log.Info("Starting controller")
+	// Register OpenShift groups to kubernetes Scheme
+	routescheme.AddToScheme(scheme.Scheme)
 
-	// Setup signal handling
-	signalChannel := make(chan os.Signal, 10)
-	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGABRT, syscall.SIGTERM)
-
+	stopCh := signals.StopChannel()
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	go func() {
+		<-stopCh
+		cancel()
+	}()
 
 	acmeUrl := v.GetString(Flag_Acmeurl_Key)
-	log.Infof("ACME server url is '%s'", acmeUrl)
+	glog.Infof("ACME server url is %q", acmeUrl)
 
-	kubeConfigPath := v.GetString(Flag_Kubeconfig_Key)
-	masterUrl := v.GetString(Flag_Masterurl_Key)
-	// use the current context in kubeconfig
-	config, err := clientcmd.BuildConfigFromFlags(masterUrl, kubeConfigPath)
+	// Better to read flag value than viper here to make sure the value is what glog uses.
+	loglevel, err := cmd.PersistentFlags().GetInt32(Flag_LogLevel_Key)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	// create the clientset
-	clientset, err := kubernetes.NewForConfig(config)
+	glog.Infof("ACME server loglevel == %d", loglevel)
+
+	config := getClientConfig(v.GetString(Flag_Kubeconfig_Key))
+
+	kubeClientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to build kubernetes clientset: %v", err)
 	}
 
-	watchNamespaces := v.GetStringSlice(Flag_Watchnamespace_Key)
-	// spf13/cobra (sadly) treats []string{""} as []string{} => we need to fix it!
-	if len(watchNamespaces) == 0 {
-		watchNamespaces = []string{""}
-	}
-	log.Debugf("namespaces: %#v", watchNamespaces)
-
-	ac := acme_controller.NewAcmeController(ctx, clientset.CoreV1(), acmeUrl, watchNamespaces)
-	log.Info("AcmeController bootstraping DB")
-	bootstrapTrace := log.Trace("AcmeController bootstraping DB finished")
-	if err := ac.BootstrapDB(true, true); err != nil {
-		log.Errorf("Unable to bootstrap certificate database: '%+v'", err)
-	}
-	bootstrapTrace.End()
-
-	log.Info("AcmeController initializing")
-	ac.Start()
-	defer ac.Wait()
-	defer cancel()
-	log.Info("AcmeController started")
-
-	listenAddr := v.GetString(Flag_Listen_Key)
-	http01, err := challengeexposers.NewHttp01(ctx, listenAddr, log.Logger)
+	routeClientset, err := routeclientset.NewForConfig(config)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to build route clientset: %v", err)
 	}
-	challengeExposers := map[string]acme.ChallengeExposer{
+
+	namespace := v.GetString(Flag_Namespace_Key)
+	if namespace == "" {
+		glog.Info("Watching all namespaces.")
+	} else {
+		errs := kvalidation.ValidateNamespaceName(namespace, false)
+		if len(errs) > 0 {
+			return fmt.Errorf("flag %q has invalid value: %s", Flag_Namespace_Key, strings.Join(errs, ", "))
+		}
+		glog.Infof("Watching only namespace %q.", namespace)
+	}
+
+	accountName := v.GetString(Flag_AccountName_Key)
+	if accountName == "" {
+		return fmt.Errorf("flag %q can't be empty string", Flag_AccountName_Key)
+	}
+	errs := kvalidation.NameIsDNSSubdomain(accountName, false)
+	if len(errs) > 0 {
+		return fmt.Errorf("flag %q has invalid value: %s", Flag_AccountName_Key, strings.Join(errs, ", "))
+	}
+
+	selfNamespace := v.GetString(Flag_SelfNamespace_Key)
+	if selfNamespace == "" {
+		glog.V(4).Infof("%q is unspecified, trying inCluster", Flag_SelfNamespace_Key)
+		selfServiceNamespaceBytes, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+		if err != nil {
+			return fmt.Errorf("failed to detect selfServiceNamespace: %v", err)
+		}
+		selfNamespace = (string)(selfServiceNamespaceBytes)
+	} else {
+		errs := kvalidation.NameIsDNSSubdomain(selfNamespace, false)
+		if len(errs) > 0 {
+			return fmt.Errorf("flag %q has invalid value: %s", Flag_SelfNamespace_Key, strings.Join(errs, ", "))
+		}
+	}
+
+	var selfSelector map[string]string
+	_, err = os.Stat(SelfLabels_Path)
+	if err == nil {
+		labelsBytes, err := ioutil.ReadFile(SelfLabels_Path)
+		if err != nil {
+			return fmt.Errorf("failed to read self labels file %q: %v", SelfLabels_Path, err)
+		}
+
+		labelsSet, err := labels.ConvertSelectorToLabelsMap(strings.Replace(strings.Replace(string(labelsBytes), "\n", ",", -1), "\"", "", -1))
+		if err != nil {
+			return fmt.Errorf("failed to parse labels in self labels file %q: %v", SelfLabels_Path, err)
+		}
+
+		selfSelector = map[string]string(labelsSet)
+		glog.Infof("Setup self selector %#v", selfSelector)
+	}
+
+	exposerIP := v.GetString(Flag_ExposerIP)
+	if exposerIP == "" {
+		return fmt.Errorf("%q can't be empty string", Flag_ExposerIP)
+	} else {
+		errs := kvalidationutil.IsValidIP(exposerIP)
+		if len(errs) > 0 {
+			return fmt.Errorf("flag %q has invalid value: %s", Flag_ExposerIP, strings.Join(errs, ", "))
+		}
+	}
+
+	exposerPort := v.GetInt(Flag_ExposerPort)
+	errs = kvalidationutil.IsValidPortNum(exposerPort)
+	if len(errs) > 0 {
+		return fmt.Errorf("flag %q has invalid value: %s", Flag_ExposerPort, strings.Join(errs, ", "))
+	}
+
+	exposerListenIP := v.GetString(Flag_ExposerListenIP)
+	if exposerListenIP == "" {
+		return fmt.Errorf("%q can't be empty string", Flag_ExposerListenIP)
+	} else {
+		errs := kvalidationutil.IsValidIP(exposerListenIP)
+		if len(errs) > 0 {
+			return fmt.Errorf("flag %q has invalid value: %s", Flag_ExposerListenIP, strings.Join(errs, ", "))
+		}
+	}
+
+	defaultRouteTermination := routev1.InsecureEdgeTerminationPolicyType(v.GetString(Flag_DefaultRouteTermination_Key))
+	switch defaultRouteTermination {
+	case routev1.InsecureEdgeTerminationPolicyRedirect,
+		routev1.InsecureEdgeTerminationPolicyAllow,
+		routev1.InsecureEdgeTerminationPolicyNone:
+	default:
+		return fmt.Errorf("flag %q has invalid value: %q", Flag_DefaultRouteTermination_Key, defaultRouteTermination)
+	}
+
+	routeInformer := routeinformersv1.NewRouteInformer(routeClientset, namespace, ResyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	glog.Infof("Starting Route informer")
+	go routeInformer.Run(stopCh)
+
+	secretInformer := kcoreinformersv1.NewSecretInformer(kubeClientset, namespace, ResyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	glog.Infof("Starting Secret informer")
+	go secretInformer.Run(stopCh)
+
+	listenAddr := fmt.Sprintf("%s:%d", exposerListenIP, exposerPort)
+	glog.Infof("Exposer listen address is %q", listenAddr)
+	http01, err := challengeexposers.NewHttp01(ctx, listenAddr)
+	if err != nil {
+		return err
+	}
+
+	exposers := map[string]challengeexposers.Interface{
 		"http-01": http01,
 	}
 
-	selfServiceNamespace := v.GetString(Flag_Selfservicenamespace_Key)
-	if selfServiceNamespace == "" {
-		namespace, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
-		if err != nil {
-			selfServiceNamespace = "default"
-			log.Warnf("Unable to autodetect service namespace. Defaulting to namespace '%s'. Error: %s", selfServiceNamespace, err)
-		} else {
-			selfServiceNamespace = string(namespace)
-		}
+	// Wait secretInformer to sync so we can create acmeClientFactory
+	if !cache.WaitForCacheSync(stopCh, secretInformer.HasSynced) {
+		return fmt.Errorf("timed out waiting for secretInformer caches to sync")
 	}
-	selfService := route_controller.ServiceID{
-		Name:      v.GetString(Flag_Selfservicename_Key),
-		Namespace: selfServiceNamespace,
-	}
-	rc, err := route_controller.NewRouteController(ctx, clientset.CoreV1(), ac, challengeExposers, selfService, watchNamespaces)
-	if err != nil {
-		log.Errorf("Couln't initialize RouteController: '%s'", err)
-		return err
-	}
-	log.Info("RouteController initializing")
-	rc.Start()
-	defer rc.Wait()
-	defer cancel()
-	log.Info("RouteController started")
+	secretLister := kcorelistersv1.NewSecretLister(secretInformer.GetIndexer())
+	acmeClientFactory := acmeclientbuilder.NewSharedClientFactory(acmeUrl, accountName, selfNamespace, kubeClientset, secretLister)
 
-	acDone := make(chan struct{}, 1)
-	go func() {
-		ac.Wait()
-		acDone <- struct{}{}
-	}()
+	rc := routecontroller.NewRouteController(acmeClientFactory, exposers, routeClientset, kubeClientset, routeInformer, secretInformer, exposerIP, int32(exposerPort), selfNamespace, selfSelector, defaultRouteTermination)
+	go rc.Run(Workers, stopCh)
 
-	rcDone := make(chan struct{}, 1)
-	go func() {
-		rc.Wait()
-		rcDone <- struct{}{}
-	}()
+	<-stopCh
 
-	select {
-	case <-acDone:
-		return errors.New("AcmeController ended unexpectedly!")
-	case <-rcDone:
-		return errors.New("RouteController ended unexpectedly!")
-	case s := <-signalChannel:
-		log.Infof("Cancelling due to signal '%s'", s)
-		return nil
-	}
+	// TODO: We should wait for controllers to stop
+
+	glog.Flush()
+
+	return nil
 }

@@ -6,34 +6,27 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"reflect"
 	"time"
 )
 
-type Certificate struct {
-	Crt         []byte            // PEM encoded
-	Key         []byte            // PEM encoded
-	Certificate *x509.Certificate `json:"-"`
+type CertPemData struct {
+	Crt []byte // PEM encoded
+	Key []byte // PEM encoded
 }
 
-func NewCertificateFromDER(der [][]byte, privateKey *rsa.PrivateKey) (certificate *Certificate, err error) {
+func NewCertificateFromDER(der [][]byte, privateKey *rsa.PrivateKey) (certificate *CertPemData, err error) {
 	if len(der) < 1 {
 		err = errors.New("can't create certificate from empty DER array")
 		return
 	}
 
-	certificate = &Certificate{}
+	certificate = &CertPemData{}
 
 	certBuffer := bytes.NewBuffer([]byte{})
-	for i, cert := range der {
-		var c *x509.Certificate
-		c, err = x509.ParseCertificate(cert)
+	for _, cert := range der {
+		_, err = x509.ParseCertificate(cert)
 		if err != nil {
 			return
-		}
-
-		if i == 0 {
-			certificate.Certificate = c
 		}
 
 		pem.Encode(certBuffer, &pem.Block{Type: "CERTIFICATE", Bytes: cert})
@@ -49,67 +42,20 @@ func NewCertificateFromDER(der [][]byte, privateKey *rsa.PrivateKey) (certificat
 	return
 }
 
-func (c *Certificate) UpdateTargetCertificate() (err error) {
+func (c *CertPemData) Certificate() (*x509.Certificate, error) {
 	block, _ := pem.Decode(c.Crt)
 	if block == nil {
-		return errors.New("UpdateTargetCertificate: no data found in Crt")
+		return nil, errors.New("no data found in Crt")
 	}
 
-	c.Certificate, err = x509.ParseCertificate(block.Bytes)
+	certificate, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	return
+	return certificate, nil
 }
 
-func (lhs *Certificate) Equal(rhs *Certificate) bool {
-	return reflect.DeepEqual(lhs.Key, rhs.Key) && reflect.DeepEqual(lhs.Crt, rhs.Crt)
-}
-
-func (c *Certificate) Domains() (domains []string) {
-	domains = append(domains, c.Certificate.DNSNames...)
-	// Add common name only if it was not in  DNSNames to avoid duplicate domains
-	found := false
-	for _, domain := range domains {
-		if domain == c.Certificate.Subject.CommonName {
-			found = true
-		}
-	}
-
-	if !found {
-		domains = append(domains, c.Certificate.Subject.CommonName)
-	}
-
-	return
-}
-
-func (c *Certificate) IsValid(t time.Time) bool {
-	return IsValid(c, t)
-}
-
-func IsValid(c *Certificate, t time.Time) bool {
-	return !(t.Before(c.Certificate.NotBefore) || t.After(c.Certificate.NotAfter))
-}
-
-func FresherCertificate(c1, c2 *Certificate, t time.Time) *Certificate {
-	c1Valid := c1.IsValid(t)
-	c2Valid := c1.IsValid(t)
-	if c1Valid {
-		if c2Valid {
-			if c2.Certificate.NotAfter.After(c1.Certificate.NotAfter) {
-				return c2
-			} else {
-				return c1
-			}
-		} else {
-			return c1
-		}
-	} else {
-		if c2Valid {
-			return c2
-		} else {
-			return c1
-		}
-	}
+func IsValid(c *x509.Certificate, t time.Time) bool {
+	return !(t.Before(c.NotBefore) || t.After(c.NotAfter))
 }

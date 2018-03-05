@@ -18,21 +18,24 @@ package rest
 
 import (
 	"io"
+	"net"
 	"net/http"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	fuzz "github.com/google/gofuzz"
 
-	"k8s.io/client-go/pkg/api"
-	"k8s.io/client-go/pkg/api/testapi"
-	"k8s.io/client-go/pkg/api/unversioned"
-	"k8s.io/client-go/pkg/apimachinery/registered"
-	"k8s.io/client-go/pkg/runtime"
-	"k8s.io/client-go/pkg/util/diff"
-	"k8s.io/client-go/pkg/util/flowcontrol"
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/diff"
+	"k8s.io/client-go/kubernetes/scheme"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"k8s.io/client-go/util/flowcontrol"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestIsConfigTransportTLS(t *testing.T) {
@@ -70,8 +73,10 @@ func TestIsConfigTransportTLS(t *testing.T) {
 		},
 		{
 			Config: &Config{
-				Host:     "1.2.3.4:567",
-				Insecure: true,
+				Host: "1.2.3.4:567",
+				TLSClientConfig: TLSClientConfig{
+					Insecure: true,
+				},
 			},
 			TransportTLS: true,
 		},
@@ -98,14 +103,50 @@ func TestSetKubernetesDefaultsUserAgent(t *testing.T) {
 	}
 }
 
+func TestAdjustVersion(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal("1.2.3", adjustVersion("1.2.3-alpha4"))
+	assert.Equal("1.2.3", adjustVersion("1.2.3-alpha"))
+	assert.Equal("1.2.3", adjustVersion("1.2.3"))
+	assert.Equal("unknown", adjustVersion(""))
+}
+
+func TestAdjustCommit(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal("1234567", adjustCommit("1234567890"))
+	assert.Equal("123456", adjustCommit("123456"))
+	assert.Equal("unknown", adjustCommit(""))
+}
+
+func TestAdjustCommand(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal("beans", adjustCommand(filepath.Join("home", "bob", "Downloads", "beans")))
+	assert.Equal("beans", adjustCommand(filepath.Join(".", "beans")))
+	assert.Equal("beans", adjustCommand("beans"))
+	assert.Equal("unknown", adjustCommand(""))
+}
+
+func TestBuildUserAgent(t *testing.T) {
+	assert.New(t).Equal(
+		"lynx/nicest (beos/itanium) kubernetes/baaaaaaaaad",
+		buildUserAgent(
+			"lynx", "nicest",
+			"beos", "itanium", "baaaaaaaaad"))
+}
+
+// This function untestable since it doesn't accept arguments.
+func TestDefaultKubernetesUserAgent(t *testing.T) {
+	assert.New(t).Contains(DefaultKubernetesUserAgent(), "kubernetes")
+}
+
 func TestRESTClientRequires(t *testing.T) {
-	if _, err := RESTClientFor(&Config{Host: "127.0.0.1", ContentConfig: ContentConfig{NegotiatedSerializer: testapi.Default.NegotiatedSerializer()}}); err == nil {
+	if _, err := RESTClientFor(&Config{Host: "127.0.0.1", ContentConfig: ContentConfig{NegotiatedSerializer: scheme.Codecs}}); err == nil {
 		t.Errorf("unexpected non-error")
 	}
-	if _, err := RESTClientFor(&Config{Host: "127.0.0.1", ContentConfig: ContentConfig{GroupVersion: &registered.GroupOrDie(api.GroupName).GroupVersion}}); err == nil {
+	if _, err := RESTClientFor(&Config{Host: "127.0.0.1", ContentConfig: ContentConfig{GroupVersion: &v1.SchemeGroupVersion}}); err == nil {
 		t.Errorf("unexpected non-error")
 	}
-	if _, err := RESTClientFor(&Config{Host: "127.0.0.1", ContentConfig: ContentConfig{GroupVersion: &registered.GroupOrDie(api.GroupName).GroupVersion, NegotiatedSerializer: testapi.Default.NegotiatedSerializer()}}); err != nil {
+	if _, err := RESTClientFor(&Config{Host: "127.0.0.1", ContentConfig: ContentConfig{GroupVersion: &v1.SchemeGroupVersion, NegotiatedSerializer: scheme.Codecs}}); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -133,7 +174,7 @@ func (t *fakeLimiter) Accept() {}
 
 type fakeCodec struct{}
 
-func (c *fakeCodec) Decode([]byte, *unversioned.GroupVersionKind, runtime.Object) (runtime.Object, *unversioned.GroupVersionKind, error) {
+func (c *fakeCodec) Decode([]byte, *schema.GroupVersionKind, runtime.Object) (runtime.Object, *schema.GroupVersionKind, error) {
 	return nil, nil, nil
 }
 
@@ -196,6 +237,8 @@ func TestAnonymousConfig(t *testing.T) {
 		func(r *clientcmdapi.AuthProviderConfig, f fuzz.Continue) {
 			r.Config = map[string]string{}
 		},
+		// Dial does not require fuzzer
+		func(r *func(network, addr string) (net.Conn, error), f fuzz.Continue) {},
 	)
 	for i := 0; i < 20; i++ {
 		original := &Config{}
@@ -205,10 +248,11 @@ func TestAnonymousConfig(t *testing.T) {
 
 		// this is the list of known security related fields, add to this list if a new field
 		// is added to Config, update AnonymousClientConfig to preserve the field otherwise.
-		expected.Impersonate = ""
+		expected.Impersonate = ImpersonationConfig{}
 		expected.BearerToken = ""
 		expected.Username = ""
 		expected.Password = ""
+		expected.CacheDir = ""
 		expected.AuthProvider = nil
 		expected.AuthConfigPersister = nil
 		expected.TLSClientConfig.CertData = nil

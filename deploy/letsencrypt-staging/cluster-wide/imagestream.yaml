@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ImageStream
+metadata:
+  name: openshift-acme
+  labels:
+    app: openshift-acme
+spec:
+  tags:
+  - name: latest
+    from:
+      kind: DockerImage
+      name: docker.io/tnozicka/openshift-acme:latest
+    importPolicy:
+      scheduled: true

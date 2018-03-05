@@ -1,5 +1,0 @@
-sh -N -R 'localhost:45000:localhost:80' your.public.server.io
-
-iptables -t nat -I OUTPUT -d 192.168.21.42 -p tcp --dport 80 -j REDIRECT --to-port 5000
-
-oadm policy add-cluster-role-to-user cluster-admin -z default

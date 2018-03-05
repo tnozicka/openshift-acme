@@ -2,20 +2,17 @@ package challengeexposers
 
 import (
 	"context"
-	"crypto"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"reflect"
 	"testing"
 
-	"github.com/go-playground/log"
-	"github.com/go-playground/log/handlers/console"
 	"golang.org/x/crypto/acme"
 )
 
@@ -55,9 +52,6 @@ var (
 )
 
 func init() {
-	cLog := console.New()
-	log.RegisterHandler(cLog, log.AllLevels...)
-
 	d, _ := pem.Decode([]byte(testKeyPEM))
 	if d == nil {
 		panic("no block found in testKeyPEM")
@@ -68,131 +62,214 @@ func init() {
 	}
 }
 
-type FakeKey struct{}
-
-func (FakeKey) Public() crypto.PublicKey {
-	return nil
-}
-func (FakeKey) Sign(io.Reader, []byte, crypto.SignerOpts) ([]byte, error) {
-	return []byte{}, nil
-}
-
-func TestHttp01_Expose(t *testing.T) {
-	// test failure with nil key
-	a := &acme.Client{
-		Key: FakeKey{},
-	}
-
-	h, err := NewHttp01(context.Background(), "127.0.0.1:0", log.Logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = h.Expose(a, "aa", "ss")
-	expectedErr := errors.New("acme: unknown key type; only RSA and ECDSA are supported")
-	if !reflect.DeepEqual(err, expectedErr) {
-		t.Fatalf("using nil key for acme should have ended up with an error '%v', got '%v'", expectedErr, err)
-	}
-}
-
-func TestHttp01NonExistingAddr(t *testing.T) {
-	_, err := NewHttp01(context.Background(), "666.0.0.0:0", log.Logger)
-
-	if err == nil {
-		t.Fatalf("setting invalid ip should have ended up with an error")
-	}
-
-}
-
-func TestHttp01(t *testing.T) {
-	// TODO: consider adding context
-
-	h, err := NewHttp01(context.Background(), "127.0.0.1:0", log.Logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	testTable := []struct {
-		domain string
-		token  string
-		err    error
+func TestNewHttp01(t *testing.T) {
+	tt := []struct {
+		address     string
+		expectedErr error
 	}{
-		{"com", "IlirfxKKXAsHtmzK29Pj8A", nil},
-		{"example.com", "example.com-key", nil},
-		{"example.com", "example-key", nil},
-		{"alfa.example.com", "aaaaa", nil},
-		{"beta.example.com", "bbbbb", nil},
-		{"", "any", errors.New("domain can't be empty")},
-		{"any.com", "", nil},
-		{"", "", errors.New("domain can't be empty")},
+		{
+			address:     "127.0.0.1:0",
+			expectedErr: nil,
+		},
+		{
+			address: "666.0.0.0:0",
+			expectedErr: &net.OpError{Op: "listen", Net: "tcp", Source: nil, Addr: nil, Err: &net.DNSError{
+				Err: "no such host", Name: "666.0.0.0", Server: "", IsTimeout: false, IsTemporary: false,
+			}},
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run("", func(t *testing.T) {
+			_, err := NewHttp01(context.Background(), tc.address)
+			if !reflect.DeepEqual(err, tc.expectedErr) {
+				t.Errorf("expected error '%#v', got '%#v'", tc.expectedErr, err)
+				return
+			}
+		})
+	}
+}
+
+func urlCountForDomain(h *Http01, domain string) int {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	return len(h.domainToUrls[domain])
+}
+
+func tokenCountForDomain(h *Http01, domain string) int {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	count := 0
+	for _, url := range h.domainToUrls[domain] {
+		_, found := h.urlToToken[url]
+		if !found {
+			panic("invalid domain->url reference: no token found")
+		}
+
+		count += 1
+	}
+
+	return count
+}
+
+func TestHttp01_ExposeAndRemove(t *testing.T) {
+	tt := []struct {
+		domain      string
+		token       string
+		expectedErr error
+	}{
+		{
+			domain:      "com",
+			token:       "IlirfxKKXAsHtmzK29Pj8A",
+			expectedErr: nil,
+		},
+		{
+			domain:      "example.com",
+			token:       "example.com-key",
+			expectedErr: nil,
+		},
+		{
+			domain:      "example.com",
+			token:       "example-key",
+			expectedErr: nil,
+		},
+		{
+			domain:      "alfa.example.com",
+			token:       "aaaaa",
+			expectedErr: nil,
+		},
+		{
+			domain:      "beta.example.com",
+			token:       "bbbbb",
+			expectedErr: nil,
+		},
+		{
+			domain:      "",
+			token:       "any",
+			expectedErr: errors.New("domain can't be empty"),
+		},
+		{
+			domain:      "any.com",
+			token:       "",
+			expectedErr: nil,
+		},
+		{
+			domain:      "",
+			token:       "",
+			expectedErr: errors.New("domain can't be empty"),
+		},
 	}
 
 	a := &acme.Client{
 		Key: testKey,
 	}
 
-	client := &http.Client{}
-
-	for _, item := range testTable {
-		url := fmt.Sprintf("http://%s%s", h.Addr, a.HTTP01ChallengePath(item.token))
-
-		// test that the url did not exist before and returns correct status
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		req.Host = item.domain
-		resp, err := client.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if resp.StatusCode != http.StatusNotFound {
-			t.Errorf("unexisting path for domain '%s' and token '%s' returned status code '%d' instead of '%d'", item.domain, item.token, resp.StatusCode, http.StatusNotFound)
-		}
-
-		expectedErr := func() (expectedErr error) {
-			expectedErr = h.Expose(a, item.domain, item.token)
-			if expectedErr != nil {
-				return
-			}
-			defer h.Remove(a, item.domain, item.token)
-
-			req, err = http.NewRequest("GET", url, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			req.Host = item.domain
-			resp, err = client.Do(req)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				t.Errorf("couldn't expose domain '%s' and token '%s' - returned status code '%d' instead of '%d'", item.domain, item.token, resp.StatusCode, http.StatusOK)
-				return
-			}
-
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				t.Fatal(err)
-			}
-			receivedKey := string(body)
-			correctKey, err := a.HTTP01ChallengeResponse(item.token)
-			if err != nil {
-				t.Error(err)
-			}
-
-			if receivedKey != correctKey {
-				t.Errorf("received key '%s' is not correct ('%s')", receivedKey, correctKey)
-			}
-
-			return nil
-		}()
-		if !reflect.DeepEqual(item.err, expectedErr) {
-			t.Errorf("expecting error '%v', got '%v'", item.err, expectedErr)
-		}
+	h, err := NewHttp01(context.Background(), "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
 	}
 
+	client := &http.Client{}
+
+	for _, tc := range tt {
+		t.Run("", func(t *testing.T) {
+			// Run this twice to make sure is works continuously
+			for i := 0; i < 2; i++ {
+				t.Run("", func(t *testing.T) {
+					if urlCountForDomain(h, tc.domain) != 0 {
+						t.Errorf("there should be no entry for domain %q", tc.domain)
+					}
+					if tokenCountForDomain(h, tc.domain) != 0 {
+						t.Errorf("there should be no token for domain %q", tc.domain)
+					}
+
+					url := fmt.Sprintf("http://%s%s", h.Addr, a.HTTP01ChallengePath(tc.token))
+
+					// test that the url did not exist before and returns correct status
+					req, err := http.NewRequest("GET", url, nil)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					req.Host = tc.domain
+					resp, err := client.Do(req)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+
+					if resp.StatusCode != http.StatusNotFound {
+						t.Errorf("unexisting path for domain '%s' and token '%s' returned status code '%d' instead of '%d'", tc.domain, tc.token, resp.StatusCode, http.StatusNotFound)
+					}
+
+					// Expose
+					err = h.Expose(a, tc.domain, tc.token)
+					if !reflect.DeepEqual(err, tc.expectedErr) {
+						t.Error(err)
+						return
+					}
+					if err != nil {
+						return
+					}
+
+					if urlCountForDomain(h, tc.domain) != 1 {
+						t.Errorf("there should be no entry for domain %q", tc.domain)
+					}
+					if tokenCountForDomain(h, tc.domain) != 1 {
+						t.Errorf("there should be no token for domain %q", tc.domain)
+					}
+
+					// Check that it is exposed
+					req, err = http.NewRequest("GET", url, nil)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					req.Host = tc.domain
+					resp, err = client.Do(req)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					defer resp.Body.Close()
+
+					if resp.StatusCode != http.StatusOK {
+						t.Errorf("couldn't expose domain '%s' and token '%s' - returned status code '%d' instead of '%d'", tc.domain, tc.token, resp.StatusCode, http.StatusOK)
+						return
+					}
+
+					body, err := ioutil.ReadAll(resp.Body)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					receivedKey := string(body)
+					correctKey, err := a.HTTP01ChallengeResponse(tc.token)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+
+					if receivedKey != correctKey {
+						t.Errorf("expected key '%s', got '%s'", receivedKey, correctKey)
+					}
+
+					err = h.Remove(tc.domain)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+
+					if urlCountForDomain(h, tc.domain) != 0 {
+						t.Errorf("there should be no entry for domain %q", tc.domain)
+					}
+					if tokenCountForDomain(h, tc.domain) != 0 {
+						t.Errorf("there should be no token for domain %q", tc.domain)
+					}
+				})
+			}
+		})
+	}
 }

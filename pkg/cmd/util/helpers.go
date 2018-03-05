@@ -8,11 +8,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-const (
-	Flag_File_Key      = "file"
-	Flag_OutputDir_Key = "output-dir"
-)
-
 func UsageError(cmd *cobra.Command, format string, args ...interface{}) error {
 	msg := fmt.Sprintf(format, args...)
 	return fmt.Errorf("%s\nSee '%s -h' for help and examples.", msg, cmd.CommandPath())
