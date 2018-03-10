@@ -10,8 +10,9 @@ GOFLAGS :=-v
 TEST_FLAGS :=-ginkgo.v
 
 GO_FILES :=$(shell find . -name '*.go' -not -path './vendor/*' -print)
-GO_PACKAGES := ./cmd/... ./pkg/...
-GO_PACKAGES_ALL :=$(GOPACKAGES) $(GO_PACKAGES_TEST)
+GO_PACKAGES :=./cmd/... ./pkg/...
+GO_PACKAGES_TEST :=./test/...
+GO_PACKAGES_ALL :=$(GO_PACKAGES) $(GO_PACKAGES_TEST)
 GO_IMPORT_PATH :=github.com/tnozicka/openshift-acme
 IMAGE_NAME :=docker.io/tnozicka/openshift-acme
 
