@@ -52,7 +52,8 @@ func NewHttp01(ctx context.Context, addr string) (*Http01, error) {
 	go func() {
 		<-ctx.Done()
 		glog.Infof("Http-01: stopping server listening on http://%s/", s.Addr)
-		ctx, _ := context.WithTimeout(ctx, ShutdownTimeout)
+		ctx, cancel := context.WithTimeout(ctx, ShutdownTimeout)
+		defer cancel()
 		server.Shutdown(ctx)
 	}()
 
