@@ -147,7 +147,10 @@ var _ = g.Describe("Routes", func() {
 		g.By("creating new Route without TLS")
 		route := &routev1.Route{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
+				// Test that the exposing goes fine even with a subdomain in name as other objects
+				// whose name might be based on this one may not support it if not normalized.
+				// See https://github.com/tnozicka/openshift-acme/issues/50
+				Name: "subdomain.test",
 				Annotations: map[string]string{
 					"kubernetes.io/tls-acme": "true",
 				},

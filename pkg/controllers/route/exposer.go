@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -133,6 +134,20 @@ func (e *Exposer) cleanupTmpObjects() error {
 	return nil
 }
 
+func createTemporaryExposerName(routeName string) string {
+	baseName := fmt.Sprintf("%s-%s-", routeName, api.ForwardingRouteSuffix)
+
+	// We need to normalize the name from possible DNSSubdomain (allowed for Route's name)
+	// to DNSLabel (allowed for regular Kubernetes objects)
+	baseName = strings.Replace(baseName, ".", "-", -1)
+
+	if len(baseName) > maxGeneratedNameLength {
+		baseName = baseName[:maxGeneratedNameLength]
+	}
+
+	return fmt.Sprintf("%s%s", baseName, utilrand.String(randomLength))
+}
+
 func (e *Exposer) Expose(c *acme.Client, domain string, token string) error {
 	err := e.cleanupTmpObjects()
 	if err != nil {
@@ -141,11 +156,7 @@ func (e *Exposer) Expose(c *acme.Client, domain string, token string) error {
 
 	trueVal := true
 
-	baseName := fmt.Sprintf("%s-%s-", e.route.Name, api.ForwardingRouteSuffix)
-	if len(baseName) > maxGeneratedNameLength {
-		baseName = baseName[:maxGeneratedNameLength]
-	}
-	exposerName := fmt.Sprintf("%s%s", baseName, utilrand.String(randomLength))
+	exposerName := createTemporaryExposerName(e.route.Name)
 
 	labels := map[string]string{
 		api.ExposerLabelName:    "true",
