@@ -296,6 +296,10 @@ func (e *Exposer) Expose(c *acme.Client, domain string, token string) error {
 	if !routeutil.IsAdmitted(route) {
 		// TODO: switch to informer to avoid broken watches
 		watcher, err := e.routeClientset.RouteV1().Routes(e.route.Namespace).Watch(metav1.SingleObject(route.ObjectMeta))
+		if err != nil {
+			return fmt.Errorf("failed to create watcher for Route %s/%s: %v", e.route.Namespace, e.route.Name, err)
+		}
+
 		_, err = watch.Until(RouterAdmitTimeout, watcher, func(event watch.Event) (bool, error) {
 			switch event.Type {
 			case watch.Modified:
