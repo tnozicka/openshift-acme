@@ -123,12 +123,12 @@ func (c *Client) AcceptAuthorization(
 func GetAuthorizationErrors(authorization *acme.Authorization) string {
 	var res []string
 	for _, challenge := range authorization.Challenges {
-		if challenge.Status != authorization.Status {
+		if challenge.Status != "invalid" {
 			continue
 		}
 
-		res = append(res, challenge.Error.Error())
+		res = append(res, fmt.Sprintf("%q challenge is %q: %v", challenge.Type, challenge.Status, challenge.Error))
 	}
 
-	return strings.Join(res, ", ")
+	return fmt.Sprintf("[%s]", strings.Join(res, ", "))
 }

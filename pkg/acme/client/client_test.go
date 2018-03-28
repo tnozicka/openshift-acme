@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -193,5 +194,62 @@ func TestCreateAccount(t *testing.T) {
 		if !reflect.DeepEqual(*c.Account, item) {
 			t.Errorf("c.Account = %#v; want %#v", c.Account, item)
 		}
+	}
+}
+
+func TestGetAuthorizationErrors(t *testing.T) {
+	tt := []struct {
+		authorization *acme.Authorization
+		expected      string
+	}{
+		{
+			authorization: &acme.Authorization{
+				Challenges: []*acme.Challenge{
+					{
+						Status: "valid",
+						Error:  nil,
+					},
+				},
+			},
+			expected: "[]",
+		},
+		{
+			authorization: &acme.Authorization{
+				Challenges: []*acme.Challenge{
+					{
+						Type:   "http-01",
+						Status: "valid",
+						Error:  nil,
+					},
+					{
+						Type:   "tls-sni-02",
+						Status: "invalid",
+						Error:  nil,
+					},
+					{
+						Type:   "dns-01",
+						Status: "invalid",
+						Error: &acme.AuthorizationError{
+							Identifier: "foo",
+							Errors: []error{
+								errors.New("an error"),
+							},
+						},
+					},
+				},
+			},
+			expected: "[\"tls-sni-02\" challenge is \"invalid\": <nil>, \"dns-01\" challenge is \"invalid\": acme: authorization error for foo: an error]",
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run("", func(t *testing.T) {
+			got := GetAuthorizationErrors(tc.authorization)
+
+			if got != tc.expected {
+				t.Errorf("expected %q, got %q", tc.expected, got)
+				return
+			}
+		})
 	}
 }
