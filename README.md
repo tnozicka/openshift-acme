@@ -12,6 +12,9 @@ metadata:
     kubernetes.io/tls-acme: "true"
 ```
 
+## Screencast
+[![openshift-acme screencast](https://asciinema.org/a/175706.png)](https://asciinema.org/a/175706)
+
 ## Deploy
 We have created some deployments to get you started in just a few seconds. (But feel free to create one that suits your needs.)
 
