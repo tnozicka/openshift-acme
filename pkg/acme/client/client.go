@@ -79,6 +79,7 @@ func (c *Client) AcceptAuthorization(
 	authorization *acme.Authorization,
 	domain string,
 	exposers map[string]challengeexposers.Interface,
+	labels map[string]string,
 ) (*acme.Authorization, error) {
 	glog.V(4).Infof("Found %d possible combinations for authorization", len(authorization.Combinations))
 

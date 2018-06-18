@@ -92,6 +92,8 @@ type RouteController struct {
 	selfSelector  map[string]string
 
 	defaultRouteTermination routev1.InsecureEdgeTerminationPolicyType
+
+	labels 		  map[string]string
 }
 
 func NewRouteController(
@@ -106,6 +108,7 @@ func NewRouteController(
 	selfNamespace string,
 	selfSelector map[string]string,
 	defaultRouteTermination routev1.InsecureEdgeTerminationPolicyType,
+	labels map[string]string,
 ) *RouteController {
 
 	eventBroadcaster := record.NewBroadcaster()
@@ -141,6 +144,7 @@ func NewRouteController(
 		selfSelector:  selfSelector,
 
 		defaultRouteTermination: defaultRouteTermination,
+		labels: labels,
 	}
 
 	routeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -366,7 +370,7 @@ func (rc *RouteController) wrapExposers(exposers map[string]challengeexposers.In
 
 	for k, v := range exposers {
 		if k == "http-01" {
-			wrapped[k] = NewExposer(v, rc.routeClientset, rc.kubeClientset, rc.recorder, rc.exposerIP, rc.exposerPort, rc.selfNamespace, rc.selfSelector, route)
+			wrapped[k] = NewExposer(v, rc.routeClientset, rc.kubeClientset, rc.recorder, rc.exposerIP, rc.exposerPort, rc.selfNamespace, rc.selfSelector, route, rc.labels)
 		} else {
 			wrapped[k] = v
 		}
@@ -447,8 +451,10 @@ func (rc *RouteController) handle(key string) error {
 		if route.Annotations == nil {
 			route.Annotations = make(map[string]string)
 		}
+
 		route.Annotations[api.AcmeAwaitingAuthzUrlAnnotation] = authorization.URI
 		route.Annotations[api.AcmeAwaitingAuthzUrlOwnerAnnotation] = client.Account.URI
+
 		// TODO: convert to PATCH to avoid loosing time and rate limits on update collisions
 		_, err = rc.routeClientset.RouteV1().Routes(route.Namespace).Update(route)
 		if err != nil {
@@ -486,7 +492,7 @@ func (rc *RouteController) handle(key string) error {
 
 		switch authorization.Status {
 		case acme.StatusPending:
-			authorization, err := client.AcceptAuthorization(ctx, authorization, routeReadOnly.Spec.Host, exposers)
+			authorization, err := client.AcceptAuthorization(ctx, authorization, routeReadOnly.Spec.Host, exposers, rc.labels)
 			if err != nil {
 				return fmt.Errorf("failed to accept ACME authorization: %v", err)
 			}

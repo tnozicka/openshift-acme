@@ -57,6 +57,7 @@ type Exposer struct {
 	selfNamespace     string
 	selfSelector      map[string]string
 	route             *routev1.Route
+	labels            map[string]string
 }
 
 var _ challengeexposers.Interface = &Exposer{}
@@ -70,6 +71,7 @@ func NewExposer(underlyingExposer challengeexposers.Interface,
 	selfNamespace string,
 	selfSelector map[string]string,
 	route *routev1.Route,
+	labels map[string]string,
 ) *Exposer {
 	return &Exposer{
 		underlyingExposer: underlyingExposer,
@@ -81,6 +83,7 @@ func NewExposer(underlyingExposer challengeexposers.Interface,
 		selfNamespace:     selfNamespace,
 		selfSelector:      selfSelector,
 		route:             route,
+		labels:			   labels,
 	}
 }
 
@@ -158,10 +161,12 @@ func (e *Exposer) Expose(c *acme.Client, domain string, token string) error {
 
 	exposerName := createTemporaryExposerName(e.route.Name)
 
-	labels := map[string]string{
+	exposerLabels := map[string]string{
 		api.ExposerLabelName:    "true",
 		api.ExposerForLabelName: string(e.route.UID),
 	}
+
+	exposerLabels = labels.Merge(labels.Set(e.labels), labels.Set(exposerLabels))
 
 	// Route can only point to a Service in the same namespace
 	// but we need to redirect ACME challenge to this controller
@@ -185,7 +190,7 @@ func (e *Exposer) Expose(c *acme.Client, domain string, token string) error {
 					Controller: &trueVal,
 				},
 			},
-			Labels: labels,
+			Labels: exposerLabels,
 		},
 		Spec: routev1.RouteSpec{
 			Host: domain,
@@ -224,7 +229,7 @@ func (e *Exposer) Expose(c *acme.Client, domain string, token string) error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            exposerName,
 			OwnerReferences: []metav1.OwnerReference{ownerRefToExposingRoute},
-			Labels:          labels,
+			Labels:          exposerLabels,
 		},
 		Spec: corev1.ServiceSpec{
 			Type:      corev1.ServiceTypeClusterIP,
@@ -265,7 +270,7 @@ func (e *Exposer) Expose(c *acme.Client, domain string, token string) error {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:            service.Name,
 				OwnerReferences: []metav1.OwnerReference{ownerRefToExposingRoute},
-				Labels:          labels,
+				Labels:          exposerLabels,
 			},
 			Subsets: []corev1.EndpointSubset{
 				{
