@@ -93,7 +93,7 @@ type RouteController struct {
 
 	defaultRouteTermination routev1.InsecureEdgeTerminationPolicyType
 
-	labels 		  map[string]string
+	labels map[string]string
 }
 
 func NewRouteController(
@@ -144,7 +144,7 @@ func NewRouteController(
 		selfSelector:  selfSelector,
 
 		defaultRouteTermination: defaultRouteTermination,
-		labels: labels,
+		labels:                  labels,
 	}
 
 	routeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{

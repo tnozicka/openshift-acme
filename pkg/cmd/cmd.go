@@ -47,7 +47,7 @@ const (
 	Flag_Namespace_Key               = "namespace"
 	Flag_AccountName_Key             = "account-name"
 	Flag_DefaultRouteTermination_Key = "default-route-termination"
-	Flag_Labels						 = "labels"
+	Flag_Labels                      = "labels"
 	SelfLabels_Path                  = "/dapi/labels"
 	ResyncPeriod                     = 10 * time.Minute
 	Workers                          = 10

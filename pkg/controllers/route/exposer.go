@@ -83,7 +83,7 @@ func NewExposer(underlyingExposer challengeexposers.Interface,
 		selfNamespace:     selfNamespace,
 		selfSelector:      selfSelector,
 		route:             route,
-		labels:			   labels,
+		labels:            labels,
 	}
 }
 
