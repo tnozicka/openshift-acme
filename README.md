@@ -11,6 +11,13 @@ metadata:
     kubernetes.io/tls-acme: "true"
 ```
 
+### Configure ACME
+You can use the following annotations to configure your route/certificate:
+
+| Annotation | Description |
+| ---------- | ----------- |
+| `kubernetes.io/tls-acme-secret-name` | Define the name of the secret used to store the certificate. Per default, the name of the route will be used. |
+
 ## Screencast
 [![openshift-acme screencast](https://asciinema.org/a/175706.png)](https://asciinema.org/a/175706)
 
