@@ -41,6 +41,7 @@ const (
 	Flag_Kubeconfig_Key              = "kubeconfig"
 	Flag_Acmeurl_Key                 = "acmeurl"
 	Flag_SelfNamespace_Key           = "selfnamespace"
+	Flag_EmailAddr_Key               = "emailaddr"
 	Flag_ExposerIP                   = "exposer-ip"
 	Flag_ExposerPort                 = "exposer-port"
 	Flag_ExposerListenIP             = "exposer-listen-ip"
@@ -89,6 +90,7 @@ func NewOpenShiftAcmeCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 
 	rootCmd.PersistentFlags().StringP(Flag_Kubeconfig_Key, "", "", "Absolute path to the kubeconfig file")
 	rootCmd.PersistentFlags().StringP(Flag_Acmeurl_Key, "", "https://acme-staging.api.letsencrypt.org/directory", "ACME URL like https://acme-v01.api.letsencrypt.org/directory")
+	rootCmd.PersistentFlags().StringP(Flag_EmailAddr_Key, "", "", "Email address to use with ACME account")
 	rootCmd.PersistentFlags().StringP(Flag_Namespace_Key, "n", "", "Restricts controller to namespace. If not specified controller watches all namespaces.")
 	rootCmd.PersistentFlags().StringP(Flag_AccountName_Key, "", "acme-account", "Name of the Secret holding ACME account.")
 	rootCmd.PersistentFlags().StringP(Flag_ExposerIP, "", "", "IP address on which this controller can be reached inside the cluster.")
@@ -145,6 +147,13 @@ func RunServer(v *viper.Viper, cmd *cobra.Command, out io.Writer) error {
 
 	acmeUrl := v.GetString(Flag_Acmeurl_Key)
 	glog.Infof("ACME server url is %q", acmeUrl)
+
+	emailAddr := v.GetString(Flag_EmailAddr_Key)
+	if emailAddr == "" {
+		glog.Info("Registration email address is not set")
+	} else {
+		glog.Infof("Registration email address is %q", emailAddr)
+	}
 
 	// Better to read flag value than viper here to make sure the value is what glog uses.
 	loglevel, err := cmd.PersistentFlags().GetInt32(Flag_LogLevel_Key)
@@ -276,7 +285,7 @@ func RunServer(v *viper.Viper, cmd *cobra.Command, out io.Writer) error {
 		return fmt.Errorf("timed out waiting for secretInformer caches to sync")
 	}
 	secretLister := kcorelistersv1.NewSecretLister(secretInformer.GetIndexer())
-	acmeClientFactory := acmeclientbuilder.NewSharedClientFactory(acmeUrl, accountName, selfNamespace, kubeClientset, secretLister)
+	acmeClientFactory := acmeclientbuilder.NewSharedClientFactory(acmeUrl, accountName, selfNamespace, kubeClientset, secretLister, emailAddr)
 
 	rc := routecontroller.NewRouteController(acmeClientFactory, exposers, routeClientset, kubeClientset, routeInformer, secretInformer, exposerIP, int32(exposerPort), selfNamespace, selfSelector, defaultRouteTermination)
 	go rc.Run(Workers, stopCh)

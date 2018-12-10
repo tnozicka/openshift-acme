@@ -105,19 +105,21 @@ func SetSpecificAnnotationsForNewAccount(secret *corev1.Secret, acmeUrl string) 
 
 type SharedClientFactory struct {
 	acmeUrl         string
+	emailAddr       string
 	secretName      string
 	secretNamespace string
 	kubeClientset   kubernetes.Interface
 	secretGetter    kcorelistersv1.SecretLister
 }
 
-func NewSharedClientFactory(acmeUrl, secretName, secretNamespace string, kubeClientset kubernetes.Interface, secretGetter kcorelistersv1.SecretLister) *SharedClientFactory {
+func NewSharedClientFactory(acmeUrl, secretName, secretNamespace string, kubeClientset kubernetes.Interface, secretGetter kcorelistersv1.SecretLister, emailAddr string) *SharedClientFactory {
 	return &SharedClientFactory{
 		acmeUrl:         acmeUrl,
 		secretName:      secretName,
 		secretNamespace: secretNamespace,
 		kubeClientset:   kubeClientset,
 		secretGetter:    secretGetter,
+		emailAddr:       emailAddr,
 	}
 }
 
@@ -146,7 +148,11 @@ func (f *SharedClientFactory) GetClient(ctx context.Context) (*acmeclient.Client
 		}
 
 		// Register new ACME account
-		client, err := f.clientByRegisteringNewAccount(ctx, &acmelib.Account{})
+		var contact []string
+		if f.emailAddr != "" {
+			contact = []string{"mailto:" + f.emailAddr}
+		}
+		client, err := f.clientByRegisteringNewAccount(ctx, &acmelib.Account{Contact: contact})
 		if err != nil {
 			return nil, err
 		}
