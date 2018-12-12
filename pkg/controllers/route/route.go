@@ -296,12 +296,12 @@ func (rc *RouteController) getState(t time.Time, route *routev1.Route, accountUr
 		if ok {
 			owner, ok := route.Annotations[api.AcmeAwaitingAuthzUrlOwnerAnnotation]
 			if !ok {
-				glog.Warning("Missing Route with %q annotation is missing %q annotation!", api.AcmeAwaitingAuthzUrlAnnotation, api.AcmeAwaitingAuthzUrlOwnerAnnotation)
+				glog.Warningf("Missing Route with %q annotation is missing %q annotation!", api.AcmeAwaitingAuthzUrlAnnotation, api.AcmeAwaitingAuthzUrlOwnerAnnotation)
 				return api.AcmeStateNeedsCert
 			}
 
 			if owner != accountUrl {
-				glog.Warning("%s mismatch: authorization owner is %q but current account is %q. This is likely because the acme-account was recreated in the meantime.", api.AcmeAwaitingAuthzUrlOwnerAnnotation, owner, accountUrl)
+				glog.Warningf("%s mismatch: authorization owner is %q but current account is %q. This is likely because the acme-account was recreated in the meantime.", api.AcmeAwaitingAuthzUrlOwnerAnnotation, owner, accountUrl)
 				return api.AcmeStateNeedsCert
 			}
 
@@ -456,7 +456,7 @@ func (rc *RouteController) handle(key string) error {
 			// We need to try to cancel the authorization so we don't leave pending authorization behind and get rate limited
 			acmeErr := client.Client.RevokeAuthorization(ctx, authorization.URI)
 			if acmeErr != nil {
-				glog.Errorf("Failed to revoke authorization %q: %v", acmeErr)
+				glog.Errorf("Failed to revoke authorization %q: %v", authorization.URI, acmeErr)
 			}
 
 			return fmt.Errorf("failed to update authorizationURI: %v", err)
