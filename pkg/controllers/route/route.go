@@ -48,7 +48,6 @@ const (
 	MaxRetries               = 2
 	RenewalStandardDeviation = 1
 	RenewalMean              = 0
-	AcmeTimeout              = 60 * time.Second
 )
 
 var (
@@ -92,6 +91,8 @@ type RouteController struct {
 	selfSelector  map[string]string
 
 	defaultRouteTermination routev1.InsecureEdgeTerminationPolicyType
+
+	acmeTimeout time.Duration
 }
 
 func NewRouteController(
@@ -106,6 +107,7 @@ func NewRouteController(
 	selfNamespace string,
 	selfSelector map[string]string,
 	defaultRouteTermination routev1.InsecureEdgeTerminationPolicyType,
+	timeout int,
 ) *RouteController {
 
 	eventBroadcaster := record.NewBroadcaster()
@@ -141,6 +143,8 @@ func NewRouteController(
 		selfSelector:  selfSelector,
 
 		defaultRouteTermination: defaultRouteTermination,
+
+		acmeTimeout: time.Duration(timeout) * time.Second,
 	}
 
 	routeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -419,7 +423,7 @@ func (rc *RouteController) handle(key string) error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), AcmeTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), rc.acmeTimeout)
 	defer cancel()
 	client, err := rc.acmeClientFactory.GetClient(ctx)
 	if err != nil {
@@ -465,7 +469,7 @@ func (rc *RouteController) handle(key string) error {
 		return nil
 
 	case api.AcmeStateWaitingForAuthz:
-		ctx, cancel := context.WithTimeout(context.Background(), AcmeTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), rc.acmeTimeout)
 		defer cancel()
 
 		client, err := rc.acmeClientFactory.GetClient(ctx)
