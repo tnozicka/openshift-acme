@@ -1,10 +1,10 @@
 language: go
 
 go:
-  - 1.8
+  - "1.10"
 
 script:
-  - PERMISSIVE_GO=y make build
+  - make verify build build-examples
 
 notifications:
   irc: "chat.freenode.net#openshift-dev"
