@@ -520,6 +520,7 @@ func (rc *RouteController) handle(key string) error {
 				},
 			}
 			template.DNSNames = append(template.DNSNames, routeReadOnly.Spec.Host)
+			glog.Infof("template: %#v", template)
 			privateKey, err := rsa.GenerateKey(cryptorand.Reader, 4096)
 			if err != nil {
 				return fmt.Errorf("failed to generate RSA key: %v", err)
@@ -529,6 +530,7 @@ func (rc *RouteController) handle(key string) error {
 			if err != nil {
 				return fmt.Errorf("failed to create certificate request: %v", err)
 			}
+			glog.Infof("csr: %#v", string(csr))
 
 			// TODO: protect with expectations
 			// TODO: aks to split CreateCert func in acme library to avoid embedded pooling

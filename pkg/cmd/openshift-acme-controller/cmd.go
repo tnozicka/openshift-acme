@@ -1,4 +1,4 @@
-package cmd
+package openshift_acme_controller
 
 import (
 	"context"

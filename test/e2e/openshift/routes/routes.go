@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	RouteAdmissionTimeout          = 10 * time.Second
-	CertificateProvisioningTimeout = 60 * time.Second
+	RouteAdmissionTimeout          = 15 * time.Second
+	CertificateProvisioningTimeout = 5 * time.Minute
 	SyncTimeout                    = 30 * time.Second
 )
 
@@ -156,7 +156,7 @@ var _ = g.Describe("Routes", func() {
 				},
 			},
 			Spec: routev1.RouteSpec{
-				Host: exutil.Domain(),
+				Host: exutil.GetDomain(),
 				To: routev1.RouteTargetReference{
 					Name: "non-existing",
 				},
@@ -265,7 +265,7 @@ var _ = g.Describe("Routes", func() {
 		now := time.Now()
 		notBefore := now.Add(-1 * time.Hour)
 		notAfter := now.Add(-1 * time.Minute)
-		certData, err := generateCertificate([]string{exutil.Domain()}, notBefore, notAfter)
+		certData, err := generateCertificate([]string{exutil.GetDomain()}, notBefore, notAfter)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		certificate, err := certData.Certificate()
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -279,7 +279,7 @@ var _ = g.Describe("Routes", func() {
 				},
 			},
 			Spec: routev1.RouteSpec{
-				Host: exutil.Domain(),
+				Host: exutil.GetDomain(),
 				To: routev1.RouteTargetReference{
 					Name: "non-existing",
 				},
@@ -333,7 +333,7 @@ var _ = g.Describe("Routes", func() {
 
 		g.By("creating new Route with unmatching certificate")
 		domain := "test.local"
-		o.Expect(domain).NotTo(o.Equal(exutil.Domain()))
+		o.Expect(domain).NotTo(o.Equal(exutil.GetDomain()))
 
 		now := time.Now()
 		notBefore := now.Add(-1 * time.Hour)
@@ -342,7 +342,7 @@ var _ = g.Describe("Routes", func() {
 		o.Expect(err).NotTo(o.HaveOccurred())
 		certificate, err := certData.Certificate()
 		o.Expect(err).NotTo(o.HaveOccurred())
-		o.Expect(certificate.DNSNames[0]).NotTo(o.Equal(exutil.Domain()))
+		o.Expect(certificate.DNSNames[0]).NotTo(o.Equal(exutil.GetDomain()))
 		o.Expect(cert.IsValid(certificate, now)).To(o.BeTrue())
 
 		route := &routev1.Route{
@@ -353,7 +353,7 @@ var _ = g.Describe("Routes", func() {
 				},
 			},
 			Spec: routev1.RouteSpec{
-				Host: exutil.Domain(),
+				Host: exutil.GetDomain(),
 				To: routev1.RouteTargetReference{
 					Name: "non-existing",
 				},
@@ -393,7 +393,7 @@ var _ = g.Describe("Routes", func() {
 		o.Expect(now.Before(certificate.NotBefore)).To(o.BeFalse())
 		o.Expect(now.After(certificate.NotAfter)).To(o.BeFalse())
 		o.Expect(cert.IsValid(certificate, now)).To(o.BeTrue())
-		o.Expect(certificate.DNSNames[0]).To(o.Equal(exutil.Domain()))
+		o.Expect(certificate.DNSNames[0]).To(o.Equal(exutil.GetDomain()))
 
 		validateSyncedSecret(f, route)
 		validateTemporaryObjectsAreDeleted(f, route)

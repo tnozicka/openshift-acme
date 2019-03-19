@@ -19,8 +19,13 @@ func KubeConfigPath() string {
 	return os.Getenv("KUBECONFIG")
 }
 
-func Domain() string {
-	return os.Getenv("TEST_DOMAIN")
+func LookupDomain() (string, bool) {
+	return os.LookupEnv("TEST_DOMAIN")
+}
+
+func GetDomain() string {
+	domain, _ := LookupDomain()
+	return domain
 }
 
 func DeleteAccountBetweenStepsInNamespace() string {
@@ -74,8 +79,8 @@ func InitTest() {
 		TestContext.CreateTestingNS = framework.CreateTestingProjectAndChangeUser
 	}
 
-	domain := Domain()
-	if domain == "" {
+	domain, found := LookupDomain()
+	if !found {
 		framework.Failf("You have to specify TEST_DOMAIN!")
 	}
 	framework.Logf("TEST_DOMAIN is %q", domain)
