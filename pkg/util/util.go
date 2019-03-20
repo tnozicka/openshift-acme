@@ -40,25 +40,23 @@ func CertificateFromPEM(crt []byte) (*x509.Certificate, error) {
 	return certificate, nil
 }
 
-func RouteAdmittedFunc() func(watch.Event) (bool, error) {
-	return func(event watch.Event) (bool, error) {
-		switch event.Type {
-		case watch.Modified:
-			r := event.Object.(*routev1.Route)
-			if routeutil.IsAdmitted(r) {
-				return true, nil
-			}
-			return false, nil
-		default:
-			return true, fmt.Errorf("unexpected event - type: %s, obj: %#v", event.Type, event.Object)
+func RouteAdmittedFunc(event watch.Event) (bool, error) {
+	switch event.Type {
+	case watch.Added, watch.Modified:
+		r := event.Object.(*routev1.Route)
+		if routeutil.IsAdmitted(r) {
+			return true, nil
 		}
+		return false, nil
+	default:
+		return true, fmt.Errorf("unexpected event - type: %s, obj: %#v", event.Type, event.Object)
 	}
 }
 
 func RouteTLSChangedFunc(tls *routev1.TLSConfig) func(watch.Event) (bool, error) {
 	return func(event watch.Event) (bool, error) {
 		switch event.Type {
-		case watch.Modified:
+		case watch.Added, watch.Modified:
 			r := event.Object.(*routev1.Route)
 			if !reflect.DeepEqual(r.Spec.TLS, tls) {
 				return true, nil
@@ -74,7 +72,7 @@ func RouteTLSChangedFunc(tls *routev1.TLSConfig) func(watch.Event) (bool, error)
 func SecretDataChangedFunc(data map[string][]byte) func(watch.Event) (bool, error) {
 	return func(event watch.Event) (bool, error) {
 		switch event.Type {
-		case watch.Modified:
+		case watch.Added, watch.Modified:
 			secret := event.Object.(*corev1.Secret)
 			if !reflect.DeepEqual(secret.Data, data) {
 				return true, nil
