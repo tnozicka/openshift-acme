@@ -44,27 +44,36 @@ func TestDottedKeyBasic(t *testing.T) {
 }
 
 func TestBaseKeyPound(t *testing.T) {
-	testError(t, "hello#world", "invalid bare character: #")
+	testError(t, "hello#world", "invalid bare key character: #")
+}
+
+func TestUnclosedSingleQuotedKey(t *testing.T) {
+	testError(t, "'", "unclosed single-quoted key")
+}
+
+func TestUnclosedDoubleQuotedKey(t *testing.T) {
+	testError(t, "\"", "unclosed double-quoted key")
+}
+
+func TestInvalidStartKeyCharacter(t *testing.T) {
+	testError(t, "/", "invalid key character: /")
+}
+
+func TestInvalidSpaceInKey(t *testing.T) {
+	testError(t, "invalid key", "invalid key character after whitespace: k")
 }
 
 func TestQuotedKeys(t *testing.T) {
 	testResult(t, `hello."foo".bar`, []string{"hello", "foo", "bar"})
 	testResult(t, `"hello!"`, []string{"hello!"})
-	testResult(t, `"hello\tworld"`, []string{"hello\tworld"})
-	testResult(t, `"\U0001F914"`, []string{"\U0001F914"})
-	testResult(t, `"\u2764"`, []string{"\u2764"})
+	testResult(t, `foo."ba.r".baz`, []string{"foo", "ba.r", "baz"})
 
-	testResult(t, `hello.'foo'.bar`, []string{"hello", "foo", "bar"})
-	testResult(t, `'hello!'`, []string{"hello!"})
-	testResult(t, `'hello\tworld'`, []string{`hello\tworld`})
-
-	testError(t, `"\w"`, `invalid escape sequence \w`)
-	testError(t, `"\`, `unfinished escape sequence`)
-	testError(t, `"\t`, `mismatched quotes`)
+	// escape sequences must not be converted
+	testResult(t, `"hello\tworld"`, []string{`hello\tworld`})
 }
 
 func TestEmptyKey(t *testing.T) {
-	testError(t, "", "empty key")
-	testError(t, " ", "empty key")
+	testError(t, ``, "empty key")
+	testError(t, ` `, "empty key")
 	testResult(t, `""`, []string{""})
 }

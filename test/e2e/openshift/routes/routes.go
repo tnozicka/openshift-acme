@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/watch"
+	watchtools "k8s.io/client-go/tools/watch"
 
 	"github.com/tnozicka/openshift-acme/pkg/api"
 	"github.com/tnozicka/openshift-acme/pkg/cert"
@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	RouteAdmissionTimeout          = 10 * time.Second
-	CertificateProvisioningTimeout = 60 * time.Second
+	RouteAdmissionTimeout          = 15 * time.Second
+	CertificateProvisioningTimeout = 5 * time.Minute
 	SyncTimeout                    = 30 * time.Second
 )
 
@@ -103,6 +103,10 @@ func validateSyncedSecret(f *framework.Framework, route *routev1.Route) {
 func validateTemporaryObjectsAreDeleted(f *framework.Framework, route *routev1.Route) {
 	g.By("Validating that temporary objects are deleted")
 
+	// GC cleans objects asynchronously.
+	// TODO: We should wait properly.
+	time.Sleep(5 * time.Second)
+
 	tmpRoutes, err := f.RouteClientset().RouteV1().Routes(route.Namespace).List(metav1.ListOptions{
 		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
 			api.ExposerForLabelName: string(route.UID),
@@ -156,7 +160,7 @@ var _ = g.Describe("Routes", func() {
 				},
 			},
 			Spec: routev1.RouteSpec{
-				Host: exutil.Domain(),
+				Host: exutil.GetDomain(),
 				To: routev1.RouteTargetReference{
 					Name: "non-existing",
 				},
@@ -166,20 +170,36 @@ var _ = g.Describe("Routes", func() {
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		g.By("waiting for Route to be admitted by the router")
-		w, err := f.RouteClientset().RouteV1().Routes(namespace).Watch(metav1.SingleObject(route.ObjectMeta))
-		o.Expect(err).NotTo(o.HaveOccurred())
-		event, err := watch.Until(RouteAdmissionTimeout, w, util.RouteAdmittedFunc())
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for Route to be admitted by the router!")
+		{
+			ctx, cancel := watchtools.ContextWithOptionalTimeout(context.Background(), RouteAdmissionTimeout)
+			defer cancel()
+			event, err := WaitForRouteCondition(
+				ctx,
+				f.RouteClientset().RouteV1().Routes(namespace),
+				route.Namespace,
+				route.Name,
+				util.RouteAdmittedFunc,
+			)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for Route to be admitted by the router!")
 
-		route = event.Object.(*routev1.Route)
+			route = event.Object.(*routev1.Route)
+		}
 
 		g.By("waiting for initial certificate to be provisioned")
-		w, err = f.RouteClientset().RouteV1().Routes(namespace).Watch(metav1.SingleObject(route.ObjectMeta))
-		o.Expect(err).NotTo(o.HaveOccurred())
-		event, err = watch.Until(CertificateProvisioningTimeout, w, util.RouteTLSChangedFunc(route.Spec.TLS))
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for certificate to be provisioned!")
+		{
+			ctx, cancel := watchtools.ContextWithOptionalTimeout(context.Background(), CertificateProvisioningTimeout)
+			defer cancel()
+			event, err := WaitForRouteCondition(
+				ctx,
+				f.RouteClientset().RouteV1().Routes(namespace),
+				route.Namespace,
+				route.Name,
+				util.RouteTLSChangedFunc(route.Spec.TLS),
+			)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for certificate to be provisioned!")
 
-		route = event.Object.(*routev1.Route)
+			route = event.Object.(*routev1.Route)
+		}
 		o.Expect(route.Spec.TLS).NotTo(o.BeNil())
 
 		o.Expect(route.Spec.TLS.Termination).To(o.Equal(routev1.TLSTerminationEdge))
@@ -208,13 +228,21 @@ var _ = g.Describe("Routes", func() {
 		o.Expect(route.Spec.TLS.Certificate).To(o.BeEmpty())
 		o.Expect(route.Spec.TLS.Key).To(o.BeEmpty())
 
-		w, err = f.RouteClientset().RouteV1().Routes(namespace).Watch(metav1.SingleObject(route.ObjectMeta))
-		o.Expect(err).NotTo(o.HaveOccurred())
-		event, err = watch.Until(CertificateProvisioningTimeout, w, util.RouteTLSChangedFunc(route.Spec.TLS))
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for certificate to be re-provisioned!")
+		{
+			ctx, cancel := watchtools.ContextWithOptionalTimeout(context.Background(), CertificateProvisioningTimeout)
+			defer cancel()
+			event, err := WaitForRouteCondition(
+				ctx,
+				f.RouteClientset().RouteV1().Routes(namespace),
+				route.Namespace,
+				route.Name,
+				util.RouteTLSChangedFunc(route.Spec.TLS),
+			)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for certificate to be re-provisioned!")
 
+			route = event.Object.(*routev1.Route)
+		}
 		g.By("validating the certificate")
-		route = event.Object.(*routev1.Route)
 		o.Expect(route.Spec.TLS).NotTo(o.BeNil())
 
 		o.Expect(route.Spec.TLS.Termination).To(o.Equal(routev1.TLSTerminationEdge))
@@ -234,10 +262,18 @@ var _ = g.Describe("Routes", func() {
 		secret, err := f.KubeClientSet().CoreV1().Secrets(route.Namespace).Patch(route.Name, types.StrategicMergePatchType, []byte(`{"data":{"tls.key":"", "tls.crt":""}}`))
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		w, err = f.KubeClientSet().CoreV1().Secrets(secret.Namespace).Watch(metav1.SingleObject(secret.ObjectMeta))
-		o.Expect(err).NotTo(o.HaveOccurred())
-		event, err = watch.Until(SyncTimeout, w, util.SecretDataChangedFunc(secret.Data))
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for Secret to be synced!")
+		{
+			ctx, cancel := watchtools.ContextWithOptionalTimeout(context.Background(), SyncTimeout)
+			defer cancel()
+			_, err := WaitForSecretCondition(
+				ctx,
+				f.KubeClientSet().CoreV1().Secrets(route.Namespace),
+				route.Namespace,
+				route.Name,
+				util.SecretDataChangedFunc(secret.Data),
+			)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for Secret to be synced!")
+		}
 
 		validateSyncedSecret(f, route)
 		validateTemporaryObjectsAreDeleted(f, route)
@@ -265,7 +301,7 @@ var _ = g.Describe("Routes", func() {
 		now := time.Now()
 		notBefore := now.Add(-1 * time.Hour)
 		notAfter := now.Add(-1 * time.Minute)
-		certData, err := generateCertificate([]string{exutil.Domain()}, notBefore, notAfter)
+		certData, err := generateCertificate([]string{exutil.GetDomain()}, notBefore, notAfter)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		certificate, err := certData.Certificate()
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -279,7 +315,7 @@ var _ = g.Describe("Routes", func() {
 				},
 			},
 			Spec: routev1.RouteSpec{
-				Host: exutil.Domain(),
+				Host: exutil.GetDomain(),
 				To: routev1.RouteTargetReference{
 					Name: "non-existing",
 				},
@@ -295,22 +331,36 @@ var _ = g.Describe("Routes", func() {
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		g.By("waiting for Route to be admitted by the router")
-		w, err := f.RouteClientset().RouteV1().Routes(namespace).Watch(metav1.SingleObject(route.ObjectMeta))
-		o.Expect(err).NotTo(o.HaveOccurred())
-		event, err := watch.Until(RouteAdmissionTimeout, w, util.RouteAdmittedFunc())
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for Route to be admitted by the router!")
+		{
+			ctx, cancel := watchtools.ContextWithOptionalTimeout(context.Background(), RouteAdmissionTimeout)
+			defer cancel()
+			event, err := WaitForRouteCondition(
+				ctx,
+				f.RouteClientset().RouteV1().Routes(namespace),
+				route.Namespace,
+				route.Name,
+				util.RouteAdmittedFunc,
+			)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for Route to be admitted by the router!")
 
-		route = event.Object.(*routev1.Route)
+			route = event.Object.(*routev1.Route)
+		}
 
 		g.By("waiting for the certificate to be updated")
-		w, err = f.RouteClientset().RouteV1().Routes(namespace).Watch(metav1.SingleObject(route.ObjectMeta))
-		o.Expect(err).NotTo(o.HaveOccurred())
-		event, err = watch.Until(CertificateProvisioningTimeout, w, util.RouteTLSChangedFunc(route.Spec.TLS))
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for certificate to be provisioned!")
+		{
+			ctx, cancel := watchtools.ContextWithOptionalTimeout(context.Background(), CertificateProvisioningTimeout)
+			defer cancel()
+			event, err := WaitForRouteCondition(
+				ctx,
+				f.RouteClientset().RouteV1().Routes(namespace),
+				route.Namespace,
+				route.Name,
+				util.RouteTLSChangedFunc(route.Spec.TLS),
+			)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for certificate to be provisioned!")
 
-		g.By("validating for the updated certificate")
-		route = event.Object.(*routev1.Route)
-
+			route = event.Object.(*routev1.Route)
+		}
 		o.Expect(route.Spec.TLS).NotTo(o.BeNil())
 
 		crt, err := util.CertificateFromPEM([]byte(route.Spec.TLS.Certificate))
@@ -333,7 +383,7 @@ var _ = g.Describe("Routes", func() {
 
 		g.By("creating new Route with unmatching certificate")
 		domain := "test.local"
-		o.Expect(domain).NotTo(o.Equal(exutil.Domain()))
+		o.Expect(domain).NotTo(o.Equal(exutil.GetDomain()))
 
 		now := time.Now()
 		notBefore := now.Add(-1 * time.Hour)
@@ -342,7 +392,7 @@ var _ = g.Describe("Routes", func() {
 		o.Expect(err).NotTo(o.HaveOccurred())
 		certificate, err := certData.Certificate()
 		o.Expect(err).NotTo(o.HaveOccurred())
-		o.Expect(certificate.DNSNames[0]).NotTo(o.Equal(exutil.Domain()))
+		o.Expect(certificate.DNSNames[0]).NotTo(o.Equal(exutil.GetDomain()))
 		o.Expect(cert.IsValid(certificate, now)).To(o.BeTrue())
 
 		route := &routev1.Route{
@@ -353,7 +403,7 @@ var _ = g.Describe("Routes", func() {
 				},
 			},
 			Spec: routev1.RouteSpec{
-				Host: exutil.Domain(),
+				Host: exutil.GetDomain(),
 				To: routev1.RouteTargetReference{
 					Name: "non-existing",
 				},
@@ -369,21 +419,37 @@ var _ = g.Describe("Routes", func() {
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		g.By("waiting for Route to be admitted by the router")
-		w, err := f.RouteClientset().RouteV1().Routes(namespace).Watch(metav1.SingleObject(route.ObjectMeta))
-		o.Expect(err).NotTo(o.HaveOccurred())
-		event, err := watch.Until(RouteAdmissionTimeout, w, util.RouteAdmittedFunc())
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for Route to be admitted by the router!")
+		{
+			ctx, cancel := watchtools.ContextWithOptionalTimeout(context.Background(), RouteAdmissionTimeout)
+			defer cancel()
+			event, err := WaitForRouteCondition(
+				ctx,
+				f.RouteClientset().RouteV1().Routes(namespace),
+				route.Namespace,
+				route.Name,
+				util.RouteAdmittedFunc,
+			)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for Route to be admitted by the router!")
 
-		route = event.Object.(*routev1.Route)
+			route = event.Object.(*routev1.Route)
+		}
 		g.By("waiting for certificate to be updated")
-		w, err = f.RouteClientset().RouteV1().Routes(namespace).Watch(metav1.SingleObject(route.ObjectMeta))
-		o.Expect(err).NotTo(o.HaveOccurred())
-		event, err = watch.Until(CertificateProvisioningTimeout, w, util.RouteTLSChangedFunc(route.Spec.TLS))
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for certificate to be provisioned!")
+		{
+			ctx, cancel := watchtools.ContextWithOptionalTimeout(context.Background(), CertificateProvisioningTimeout)
+			defer cancel()
+			event, err := WaitForRouteCondition(
+				ctx,
+				f.RouteClientset().RouteV1().Routes(namespace),
+				route.Namespace,
+				route.Name,
+				util.RouteTLSChangedFunc(route.Spec.TLS),
+			)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for certificate to be provisioned!")
+
+			route = event.Object.(*routev1.Route)
+		}
 
 		g.By("validating updated certificate")
-		route = event.Object.(*routev1.Route)
-
 		o.Expect(route.Spec.TLS).NotTo(o.BeNil())
 
 		certificate, err = util.CertificateFromPEM([]byte(route.Spec.TLS.Certificate))
@@ -393,7 +459,7 @@ var _ = g.Describe("Routes", func() {
 		o.Expect(now.Before(certificate.NotBefore)).To(o.BeFalse())
 		o.Expect(now.After(certificate.NotAfter)).To(o.BeFalse())
 		o.Expect(cert.IsValid(certificate, now)).To(o.BeTrue())
-		o.Expect(certificate.DNSNames[0]).To(o.Equal(exutil.Domain()))
+		o.Expect(certificate.DNSNames[0]).To(o.Equal(exutil.GetDomain()))
 
 		validateSyncedSecret(f, route)
 		validateTemporaryObjectsAreDeleted(f, route)

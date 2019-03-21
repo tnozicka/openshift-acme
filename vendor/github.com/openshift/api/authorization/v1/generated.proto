@@ -6,10 +6,10 @@ syntax = 'proto2';
 package github.com.openshift.api.authorization.v1;
 
 import "k8s.io/api/core/v1/generated.proto";
+import "k8s.io/api/rbac/v1/generated.proto";
 import "k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto";
 import "k8s.io/apimachinery/pkg/runtime/generated.proto";
 import "k8s.io/apimachinery/pkg/runtime/schema/generated.proto";
-import "k8s.io/apimachinery/pkg/util/intstr/generated.proto";
 
 // Package-wide variables from generator "generated".
 option go_package = "v1";
@@ -46,53 +46,6 @@ message Action {
   optional k8s.io.apimachinery.pkg.runtime.RawExtension content = 7;
 }
 
-// ClusterPolicy is a object that holds all the ClusterRoles for a particular namespace.  There is at most
-// one ClusterPolicy document per namespace.
-message ClusterPolicy {
-  // Standard object's metadata.
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
-
-  // LastModified is the last time that any part of the ClusterPolicy was created, updated, or deleted
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.Time lastModified = 2;
-
-  // Roles holds all the ClusterRoles held by this ClusterPolicy, mapped by ClusterRole.Name
-  repeated NamedClusterRole roles = 3;
-}
-
-// ClusterPolicyBinding is a object that holds all the ClusterRoleBindings for a particular namespace.  There is
-// one ClusterPolicyBinding document per referenced ClusterPolicy namespace
-message ClusterPolicyBinding {
-  // Standard object's metadata.
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
-
-  // LastModified is the last time that any part of the ClusterPolicyBinding was created, updated, or deleted
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.Time lastModified = 2;
-
-  // PolicyRef is a reference to the ClusterPolicy that contains all the ClusterRoles that this ClusterPolicyBinding's RoleBindings may reference
-  optional k8s.io.api.core.v1.ObjectReference policyRef = 3;
-
-  // RoleBindings holds all the ClusterRoleBindings held by this ClusterPolicyBinding, mapped by ClusterRoleBinding.Name
-  repeated NamedClusterRoleBinding roleBindings = 4;
-}
-
-// ClusterPolicyBindingList is a collection of ClusterPolicyBindings
-message ClusterPolicyBindingList {
-  // Standard object's metadata.
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.ListMeta metadata = 1;
-
-  // Items is a list of ClusterPolicyBindings
-  repeated ClusterPolicyBinding items = 2;
-}
-
-// ClusterPolicyList is a collection of ClusterPolicies
-message ClusterPolicyList {
-  // Standard object's metadata.
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.ListMeta metadata = 1;
-
-  // Items is a list of ClusterPolicies
-  repeated ClusterPolicy items = 2;
-}
-
 // ClusterRole is a logical grouping of PolicyRules that can be referenced as a unit by ClusterRoleBindings.
 message ClusterRole {
   // Standard object's metadata.
@@ -100,6 +53,11 @@ message ClusterRole {
 
   // Rules holds all the PolicyRules for this ClusterRole
   repeated PolicyRule rules = 2;
+
+  // AggregationRule is an optional field that describes how to build the Rules for this ClusterRole.
+  // If AggregationRule is set, then the Rules are controller managed and direct changes to Rules will be
+  // stomped by the controller.
+  optional k8s.io.api.rbac.v1.AggregationRule aggregationRule = 3;
 }
 
 // ClusterRoleBinding references a ClusterRole, but not contain it.  It can reference any ClusterRole in the same namespace or in the global namespace.
@@ -245,53 +203,6 @@ message OptionalScopes {
   // items, if empty, will result in an empty slice
 
   repeated string items = 1;
-}
-
-// Policy is a object that holds all the Roles for a particular namespace.  There is at most
-// one Policy document per namespace.
-message Policy {
-  // Standard object's metadata.
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
-
-  // LastModified is the last time that any part of the Policy was created, updated, or deleted
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.Time lastModified = 2;
-
-  // Roles holds all the Roles held by this Policy, mapped by Role.Name
-  repeated NamedRole roles = 3;
-}
-
-// PolicyBinding is a object that holds all the RoleBindings for a particular namespace.  There is
-// one PolicyBinding document per referenced Policy namespace
-message PolicyBinding {
-  // Standard object's metadata.
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
-
-  // LastModified is the last time that any part of the PolicyBinding was created, updated, or deleted
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.Time lastModified = 2;
-
-  // PolicyRef is a reference to the Policy that contains all the Roles that this PolicyBinding's RoleBindings may reference
-  optional k8s.io.api.core.v1.ObjectReference policyRef = 3;
-
-  // RoleBindings holds all the RoleBindings held by this PolicyBinding, mapped by RoleBinding.Name
-  repeated NamedRoleBinding roleBindings = 4;
-}
-
-// PolicyBindingList is a collection of PolicyBindings
-message PolicyBindingList {
-  // Standard object's metadata.
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.ListMeta metadata = 1;
-
-  // Items is a list of PolicyBindings
-  repeated PolicyBinding items = 2;
-}
-
-// PolicyList is a collection of Policies
-message PolicyList {
-  // Standard object's metadata.
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.ListMeta metadata = 1;
-
-  // Items is a list of Policies
-  repeated Policy items = 2;
 }
 
 // PolicyRule holds information that describes a policy rule, but does not contain information

@@ -1,6 +1,7 @@
 package route
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -24,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
+	watchtools "k8s.io/client-go/tools/watch"
 
 	"github.com/tnozicka/openshift-acme/pkg/acme/challengeexposers"
 	"github.com/tnozicka/openshift-acme/pkg/api"
@@ -300,7 +302,9 @@ func (e *Exposer) Expose(c *acme.Client, domain string, token string) error {
 			return fmt.Errorf("failed to create watcher for Route %s/%s: %v", e.route.Namespace, e.route.Name, err)
 		}
 
-		_, err = watch.Until(RouterAdmitTimeout, watcher, func(event watch.Event) (bool, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), RouterAdmitTimeout)
+		defer cancel()
+		_, err = watchtools.UntilWithoutRetry(ctx, watcher, func(event watch.Event) (bool, error) {
 			switch event.Type {
 			case watch.Modified:
 				exposingRoute := event.Object.(*routev1.Route)

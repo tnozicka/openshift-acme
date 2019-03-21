@@ -2,6 +2,7 @@ package toml
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"testing"
 	"time"
@@ -46,7 +47,7 @@ func assertTree(t *testing.T, tree *Tree, err error, ref map[string]interface{})
 func TestCreateSubTree(t *testing.T) {
 	tree := newTree()
 	tree.createSubTree([]string{"a", "b", "c"}, Position{})
-	tree.Set("a.b.c", "", false, 42)
+	tree.Set("a.b.c", 42)
 	if tree.Get("a.b.c") != 42 {
 		t.Fail()
 	}
@@ -72,6 +73,17 @@ func TestNumberInKey(t *testing.T) {
 	})
 }
 
+func TestIncorrectKeyExtraSquareBracket(t *testing.T) {
+	_, err := Load(`[a]b]
+zyx = 42`)
+	if err == nil {
+		t.Error("Error should have been returned.")
+	}
+	if err.Error() != "(1, 4): parsing error: keys cannot contain ] character" {
+		t.Error("Bad error message:", err.Error())
+	}
+}
+
 func TestSimpleNumbers(t *testing.T) {
 	tree, err := Load("a = +42\nb = -21\nc = +4.2\nd = -2.1")
 	assertTree(t, tree, err, map[string]interface{}{
@@ -80,6 +92,78 @@ func TestSimpleNumbers(t *testing.T) {
 		"c": float64(4.2),
 		"d": float64(-2.1),
 	})
+}
+
+func TestSpecialFloats(t *testing.T) {
+	tree, err := Load(`
+normalinf = inf
+plusinf = +inf
+minusinf = -inf
+normalnan = nan
+plusnan = +nan
+minusnan = -nan
+`)
+	assertTree(t, tree, err, map[string]interface{}{
+		"normalinf": math.Inf(1),
+		"plusinf":   math.Inf(1),
+		"minusinf":  math.Inf(-1),
+		"normalnan": math.NaN(),
+		"plusnan":   math.NaN(),
+		"minusnan":  math.NaN(),
+	})
+}
+
+func TestHexIntegers(t *testing.T) {
+	tree, err := Load(`a = 0xDEADBEEF`)
+	assertTree(t, tree, err, map[string]interface{}{"a": int64(3735928559)})
+
+	tree, err = Load(`a = 0xdeadbeef`)
+	assertTree(t, tree, err, map[string]interface{}{"a": int64(3735928559)})
+
+	tree, err = Load(`a = 0xdead_beef`)
+	assertTree(t, tree, err, map[string]interface{}{"a": int64(3735928559)})
+
+	_, err = Load(`a = 0x_1`)
+	if err.Error() != "(1, 5): invalid use of _ in hex number" {
+		t.Error("Bad error message:", err.Error())
+	}
+}
+
+func TestOctIntegers(t *testing.T) {
+	tree, err := Load(`a = 0o01234567`)
+	assertTree(t, tree, err, map[string]interface{}{"a": int64(342391)})
+
+	tree, err = Load(`a = 0o755`)
+	assertTree(t, tree, err, map[string]interface{}{"a": int64(493)})
+
+	_, err = Load(`a = 0o_1`)
+	if err.Error() != "(1, 5): invalid use of _ in number" {
+		t.Error("Bad error message:", err.Error())
+	}
+}
+
+func TestBinIntegers(t *testing.T) {
+	tree, err := Load(`a = 0b11010110`)
+	assertTree(t, tree, err, map[string]interface{}{"a": int64(214)})
+
+	_, err = Load(`a = 0b_1`)
+	if err.Error() != "(1, 5): invalid use of _ in number" {
+		t.Error("Bad error message:", err.Error())
+	}
+}
+
+func TestBadIntegerBase(t *testing.T) {
+	_, err := Load(`a = 0k1`)
+	if err.Error() != "(1, 5): unknown number base: k. possible options are x (hex) o (octal) b (binary)" {
+		t.Error("Error should have been returned.")
+	}
+}
+
+func TestIntegerNoDigit(t *testing.T) {
+	_, err := Load(`a = 0b`)
+	if err.Error() != "(1, 5): number needs at least one digit" {
+		t.Error("Bad error message:", err.Error())
+	}
 }
 
 func TestNumbersWithUnderscores(t *testing.T) {
@@ -152,6 +236,36 @@ func TestSpaceKey(t *testing.T) {
 	tree, err := Load("\"a b\" = \"hello world\"")
 	assertTree(t, tree, err, map[string]interface{}{
 		"a b": "hello world",
+	})
+}
+
+func TestDoubleQuotedKey(t *testing.T) {
+	tree, err := Load(`
+	"key"        = "a"
+	"\t"         = "b"
+	"\U0001F914" = "c"
+	"\u2764"     = "d"
+	`)
+	assertTree(t, tree, err, map[string]interface{}{
+		"key":        "a",
+		"\t":         "b",
+		"\U0001F914": "c",
+		"\u2764":     "d",
+	})
+}
+
+func TestSingleQuotedKey(t *testing.T) {
+	tree, err := Load(`
+	'key'        = "a"
+	'\t'         = "b"
+	'\U0001F914' = "c"
+	'\u2764'     = "d"
+	`)
+	assertTree(t, tree, err, map[string]interface{}{
+		`key`:        "a",
+		`\t`:         "b",
+		`\U0001F914`: "c",
+		`\u2764`:     "d",
 	})
 }
 
@@ -467,7 +581,7 @@ func TestDuplicateKeys(t *testing.T) {
 
 func TestEmptyIntermediateTable(t *testing.T) {
 	_, err := Load("[foo..bar]")
-	if err.Error() != "(1, 2): invalid table array key: empty table key" {
+	if err.Error() != "(1, 2): invalid table array key: expecting key part after dot" {
 		t.Error("Bad error message:", err.Error())
 	}
 }
@@ -642,7 +756,7 @@ func TestTomlValueStringRepresentation(t *testing.T) {
 		{int64(12345), "12345"},
 		{uint64(50), "50"},
 		{float64(123.45), "123.45"},
-		{bool(true), "true"},
+		{true, "true"},
 		{"hello world", "\"hello world\""},
 		{"\b\t\n\f\r\"\\", "\"\\b\\t\\n\\f\\r\\\"\\\\\""},
 		{"\x05", "\"\\u0005\""},
@@ -652,7 +766,7 @@ func TestTomlValueStringRepresentation(t *testing.T) {
 			"[\"gamma\",\"delta\"]"},
 		{nil, ""},
 	} {
-		result, err := tomlValueStringRepresentation(item.Value)
+		result, err := tomlValueStringRepresentation(item.Value, "", false)
 		if err != nil {
 			t.Errorf("Test %d - unexpected error: %s", idx, err)
 		}
@@ -781,5 +895,45 @@ func TestInvalidFloatParsing(t *testing.T) {
 	_, err = Load("a=_1_2")
 	if err.Error() != "(1, 3): cannot start number with underscore" {
 		t.Error("Bad error message:", err.Error())
+	}
+}
+
+func TestMapKeyIsNum(t *testing.T) {
+	_, err := Load("table={2018=1,2019=2}")
+	if err != nil {
+		t.Error("should be passed")
+	}
+	_, err = Load(`table={"2018"=1,"2019"=2}`)
+	if err != nil {
+		t.Error("should be passed")
+	}
+}
+
+func TestDottedKeys(t *testing.T) {
+	tree, err := Load(`
+name = "Orange"
+physical.color = "orange"
+physical.shape = "round"
+site."google.com" = true`)
+
+	assertTree(t, tree, err, map[string]interface{}{
+		"name": "Orange",
+		"physical": map[string]interface{}{
+			"color": "orange",
+			"shape": "round",
+		},
+		"site": map[string]interface{}{
+			"google.com": true,
+		},
+	})
+}
+
+func TestInvalidDottedKeyEmptyGroup(t *testing.T) {
+	_, err := Load(`a..b = true`)
+	if err == nil {
+		t.Fatal("should return an error")
+	}
+	if err.Error() != "(1, 1): invalid key: expecting key part after dot" {
+		t.Fatalf("invalid error message: %s", err)
 	}
 }
