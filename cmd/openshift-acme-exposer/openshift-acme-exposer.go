@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
 	cmd "github.com/tnozicka/openshift-acme/pkg/cmd/openshift-acme-exposer"
 )
 
@@ -17,7 +18,11 @@ func main() {
 		runtime.GOMAXPROCS(runtime.NumCPU())
 	}
 
-	command := cmd.NewOpenShiftAcmeExposerCommand(os.Stdin, os.Stdout, os.Stderr)
+	command := cmd.NewOpenShiftAcmeExposerCommand(genericclioptions.IOStreams{
+		In:     os.Stdin,
+		Out:    os.Stdout,
+		ErrOut: os.Stderr,
+	})
 	err := command.Execute()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)

@@ -1,11 +1,11 @@
 package util
 
 import (
+	"flag"
 	"fmt"
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
-	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -18,23 +18,23 @@ func UsageError(cmd *cobra.Command, format string, args ...interface{}) error {
 	return fmt.Errorf("%s\nSee '%s -h' for help and examples.", msg, cmd.CommandPath())
 }
 
-func BindViperNames(v *viper.Viper, fs *flag.FlagSet, viperName string, cobraName string) {
-	// errors here are mistakes in the code and cobra will panic in similar conditions; let's not handle it differently here right now
+// func BindViperNames(v *viper.Viper, fs *flag.FlagSet, viperName string, cobraName string) {
+// 	// errors here are mistakes in the code and cobra will panic in similar conditions; let's not handle it differently here right now
+//
+// 	flag := fs.Lookup(cobraName)
+// 	if flag == nil {
+// 		panic(fmt.Sprintf("Viper can't bind flag: %s", cobraName))
+// 	}
+//
+// 	err := v.BindPFlag(viperName, flag)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// }
 
-	flag := fs.Lookup(cobraName)
-	if flag == nil {
-		panic(fmt.Sprintf("Viper can't bind flag: %s", cobraName))
-	}
-
-	err := v.BindPFlag(viperName, flag)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func BindViper(v *viper.Viper, fs *flag.FlagSet, name string) {
-	BindViperNames(v, fs, name, name)
-}
+// func BindViper(v *viper.Viper, fs *flag.FlagSet, name string) {
+// 	BindViperNames(v, fs, name, name)
+// }
 
 func MirrorViperForGLog(cmd *cobra.Command, v *viper.Viper) error {
 	if v.IsSet(FlagLogLevelKey) {
@@ -45,6 +45,8 @@ func MirrorViperForGLog(cmd *cobra.Command, v *viper.Viper) error {
 			return fmt.Errorf("failed to set %q flag: %v", FlagLogLevelKey, err)
 		}
 	}
+
+	return nil
 }
 
 func InstallGLog(cmd *cobra.Command, defaultLogLevel int32) error {
@@ -63,7 +65,7 @@ func InstallGLog(cmd *cobra.Command, defaultLogLevel int32) error {
 		return fmt.Errorf("failed to set logtostderr flag: %v", err)
 	}
 	// Make glog happy
-	err := flag.CommandLine.Parse([]string{})
+	err = flag.CommandLine.Parse([]string{})
 	if err != nil {
 		return fmt.Errorf("failed to parse command line: %v", err)
 	}

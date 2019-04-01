@@ -1,13 +1,9 @@
 package openshift_acme
 
 import (
-	"context"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
@@ -17,7 +13,6 @@ import (
 
 	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
 	cmdutil "github.com/tnozicka/openshift-acme/pkg/cmd/util"
-	"github.com/tnozicka/openshift-acme/pkg/signals"
 )
 
 type ExposerOptions struct {
@@ -25,14 +20,14 @@ type ExposerOptions struct {
 	Loglevel int32
 
 	Data     *string
-	Port     int
+	Port     uint16
 	ListenIP string
 }
 
 func NewExposerOptions(streams genericclioptions.IOStreams) *ExposerOptions {
 	return &ExposerOptions{
 		IOStreams: streams,
-		loglevel:  2,
+		Loglevel:  2,
 		Data:      nil,
 		Port:      5000,
 		ListenIP:  "0.0.0.0",
@@ -65,7 +60,7 @@ func NewOpenShiftAcmeExposerCommand(streams genericclioptions.IOStreams) *cobra.
 				return err
 			}
 
-			err = o.Run()
+			err = o.Run(v, cmd, streams.ErrOut)
 			if err != nil {
 				return err
 			}
@@ -90,8 +85,8 @@ func NewOpenShiftAcmeExposerCommand(streams genericclioptions.IOStreams) *cobra.
 		SilenceUsage:  true,
 	}
 
-	rootCmd.PersistentFlags().StringP("data", "d", o.Data, "Data to expose for every request on this server.")
-	rootCmd.PersistentFlags().UintP("port", "", o.Port, "Port for http-01 server")
+	rootCmd.PersistentFlags().StringP("data", "d", *o.Data, "Data to expose for every request on this server.")
+	rootCmd.PersistentFlags().Uint16P("port", "", o.Port, "Port for http-01 server")
 	rootCmd.PersistentFlags().StringP("listen-ip", "", o.ListenIP, "Listen address for http-01 server")
 
 	err := cmdutil.InstallGLog(rootCmd, o.Loglevel)
@@ -111,7 +106,7 @@ func (o *ExposerOptions) Validate() error {
 		return fmt.Errorf("no data specified for the exposer")
 	}
 
-	errs := kvalidationutil.IsValidPortNum(o.Port)
+	errs := kvalidationutil.IsValidPortNum(int(o.Port))
 	if len(errs) > 0 {
 		return fmt.Errorf("Port has invalid value: %s", strings.Join(errs, ", "))
 	}
@@ -119,66 +114,70 @@ func (o *ExposerOptions) Validate() error {
 	return nil
 }
 
-func (*ExposerOptions) Run(v *viper.Viper, cmd *cobra.Command, out io.Writer) error {
-	stopCh := signals.StopChannel()
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		<-stopCh
-		cancel()
-	}()
+func (o *ExposerOptions) Run(v *viper.Viper, cmd *cobra.Command, out io.Writer) error {
+	glog.Infof("Running with loglevel == %d", o.Loglevel)
 
-	glog.Infof("Running with loglevel == %d", o.lo)
+	return nil
 
-	exposerPort := v.GetInt(Flag_ExposerPort)
-	errs := kvalidationutil.IsValidPortNum(exposerPort)
-	if len(errs) > 0 {
-		return fmt.Errorf("flag %q has invalid value: %s", Flag_ExposerPort, strings.Join(errs, ", "))
-	}
+	/*
+		stopCh := signals.StopChannel()
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			<-stopCh
+			cancel()
+		}()
 
-	exposerListenIP := v.GetString(Flag_ExposerListenIP)
-	if exposerListenIP == "" {
-		return fmt.Errorf("%q can't be empty string", Flag_ExposerListenIP)
-	} else {
-		errs := kvalidationutil.IsValidIP(exposerListenIP)
+		exposerPort := v.GetInt(Flag_ExposerPort)
+		errs := kvalidationutil.IsValidPortNum(exposerPort)
 		if len(errs) > 0 {
-			return fmt.Errorf("flag %q has invalid value: %s", Flag_ExposerListenIP, strings.Join(errs, ", "))
+			return fmt.Errorf("flag %q has invalid value: %s", Flag_ExposerPort, strings.Join(errs, ", "))
 		}
-	}
 
-	data := v.GetString(Flag_Data_Key)
-	if data == "" {
-		glog.Warning("Exposing empty data.")
-	}
+		exposerListenIP := v.GetString(Flag_ExposerListenIP)
+		if exposerListenIP == "" {
+			return fmt.Errorf("%q can't be empty string", Flag_ExposerListenIP)
+		} else {
+			errs := kvalidationutil.IsValidIP(exposerListenIP)
+			if len(errs) > 0 {
+				return fmt.Errorf("flag %q has invalid value: %s", Flag_ExposerListenIP, strings.Join(errs, ", "))
+			}
+		}
 
-	handleAll := func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, data)
-		// o not log the content here as pod logs can be collected and the token is secret
-		glog.V(2).Infof("Responded for path %q", r.RequestURI)
-	}
+		data := v.GetString(Flag_Data_Key)
+		if data == "" {
+			glog.Warning("Exposing empty data.")
+		}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", handleAll)
-	listenAddr := fmt.Sprintf("%s:%d", exposerListenIP, exposerPort)
-	server := &http.Server{
-		//Addr:    addr,
-		Handler: mux,
-	}
+		handleAll := func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, data)
+			// o not log the content here as pod logs can be collected and the token is secret
+			glog.V(2).Infof("Responded for path %q", r.RequestURI)
+		}
 
-	listener, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		return err
-	}
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", handleAll)
+		listenAddr := fmt.Sprintf("%s:%d", exposerListenIP, exposerPort)
+		server := &http.Server{
+			//Addr:    addr,
+			Handler: mux,
+		}
 
-	glog.Infof("Listening on http://%s/", listener.Addr().String())
+		listener, err := net.Listen("tcp", listenAddr)
+		if err != nil {
+			return err
+		}
 
-	go func() {
-		<-ctx.Done()
-		glog.Info("Stopping http server...")
-		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-		server.Shutdown(ctx)
-	}()
+		glog.Infof("Listening on http://%s/", listener.Addr().String())
 
-	return server.Serve(listener)
+		go func() {
+			<-ctx.Done()
+			glog.Info("Stopping http server...")
+			ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			server.Shutdown(ctx)
+		}()
+
+		return server.Serve(listener)
+	*/
 }
