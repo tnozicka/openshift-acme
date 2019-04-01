@@ -44,6 +44,9 @@ type ControllerContext struct {
 	// EventRecorder is used to record events in controllers.
 	EventRecorder events.Recorder
 
+	// Server is the GenericAPIServer serving healthz checks and debug info
+	Server *genericapiserver.GenericAPIServer
+
 	stopChan <-chan struct{}
 }
 
@@ -182,33 +185,31 @@ func (b *ControllerBuilder) Run(config *unstructured.Unstructured, ctx context.C
 		}
 	}
 
-	switch {
-	case b.servingInfo == nil && len(b.healthChecks) > 0:
-		return fmt.Errorf("healthchecks without server config won't work")
-
-	default:
-		kubeConfig := ""
-		if b.kubeAPIServerConfigFile != nil {
-			kubeConfig = *b.kubeAPIServerConfigFile
-		}
-		serverConfig, err := serving.ToServerConfig(*b.servingInfo, *b.authenticationConfig, *b.authorizationConfig, kubeConfig)
-		if err != nil {
-			return err
-		}
-		serverConfig.HealthzChecks = append(serverConfig.HealthzChecks, b.healthChecks...)
-
-		server, err := serverConfig.Complete(nil).New(b.componentName, genericapiserver.NewEmptyDelegate())
-		if err != nil {
-			return err
-		}
-
-		go func() {
-			if err := server.PrepareRun().Run(ctx.Done()); err != nil {
-				glog.Error(err)
-			}
-			glog.Fatal("server exited")
-		}()
+	if b.servingInfo == nil {
+		return fmt.Errorf("server config required for health checks and debugging endpoints")
 	}
+
+	kubeConfig := ""
+	if b.kubeAPIServerConfigFile != nil {
+		kubeConfig = *b.kubeAPIServerConfigFile
+	}
+	serverConfig, err := serving.ToServerConfig(*b.servingInfo, *b.authenticationConfig, *b.authorizationConfig, kubeConfig)
+	if err != nil {
+		return err
+	}
+	serverConfig.HealthzChecks = append(serverConfig.HealthzChecks, b.healthChecks...)
+
+	server, err := serverConfig.Complete(nil).New(b.componentName, genericapiserver.NewEmptyDelegate())
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		if err := server.PrepareRun().Run(ctx.Done()); err != nil {
+			glog.Error(err)
+		}
+		glog.Fatal("server exited")
+	}()
 
 	protoConfig := rest.CopyConfig(clientConfig)
 	protoConfig.AcceptContentTypes = "application/vnd.kubernetes.protobuf,application/json"
@@ -219,6 +220,7 @@ func (b *ControllerBuilder) Run(config *unstructured.Unstructured, ctx context.C
 		KubeConfig:      clientConfig,
 		ProtoKubeConfig: protoConfig,
 		EventRecorder:   eventRecorder,
+		Server:          server,
 		stopChan:        ctx.Done(),
 	}
 

@@ -1,5 +1,5 @@
 hash: b529eda5bdd9ae73ed1716a6cc9af4536625c6ec4a6145adee75dd1af59a5581
-updated: 2019-03-19T18:11:39.115562756+01:00
+updated: 2019-04-01T16:35:01.529041792+02:00
 imports:
 - name: github.com/davecgh/go-spew
   version: 782f4967f2dc4564575ca782fe2d04090b5faca8
@@ -107,10 +107,11 @@ imports:
   - matchers/support/goraph/util
   - types
 - name: github.com/openshift/api
-  version: 19e76f656f2b86e0624d6199e8b3fe49b89269ad
+  version: e8532c51d46fdc99060e3357da9282a3c588ee94
   subpackages:
   - oauth/v1
   - project/v1
+  - route
   - route/v1
   - user/v1
 - name: github.com/openshift/client-go
@@ -132,13 +133,13 @@ imports:
   - user/clientset/versioned/scheme
   - user/clientset/versioned/typed/user/v1
 - name: github.com/openshift/library-go
-  version: 51f03990e759d660adfcb525f80d31fbd59e854b
+  version: ce0e892919bd98ca70214f34ba4d59428f76bc3c
 - name: github.com/pelletier/go-toml
-  version: 690ec00a4b7e125266cf1c4725ae24af22564f8f
+  version: f9070d3b400d7bf7c9b4e4e05916f92fd0b79e0c
 - name: github.com/peterbourgon/diskv
   version: 5f041e8faa004a95c88a202771f4cc3e991971e6
 - name: github.com/spf13/afero
-  version: f4711e4db9e9a1d3887343acb72b2bbfc2f686f5
+  version: 588a75ec4f32903aa5e39a2619ba6a4631e28424
   subpackages:
   - mem
 - name: github.com/spf13/cast
@@ -367,6 +368,7 @@ imports:
   - tools/pager
   - tools/record
   - tools/reference
+  - tools/watch
   - transport
   - util/buffer
   - util/cert

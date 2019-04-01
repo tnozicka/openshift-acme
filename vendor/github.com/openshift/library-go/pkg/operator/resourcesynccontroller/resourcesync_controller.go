@@ -1,12 +1,15 @@
 package resourcesynccontroller
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/golang/glog"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -241,4 +244,71 @@ func (c *ResourceSyncController) eventHandler() cache.ResourceEventHandler {
 		UpdateFunc: func(old, new interface{}) { c.queue.Add(controllerWorkQueueKey) },
 		DeleteFunc: func(obj interface{}) { c.queue.Add(controllerWorkQueueKey) },
 	}
+}
+
+func NewDebugHandler(controller *ResourceSyncController) http.Handler {
+	return &debugHTTPHandler{controller: controller}
+}
+
+type debugHTTPHandler struct {
+	controller *ResourceSyncController
+}
+
+type ResourceSyncRule struct {
+	Source      ResourceLocation `json:"source"`
+	Destination ResourceLocation `json:"destination"`
+}
+
+type ResourceSyncRuleList []ResourceSyncRule
+
+func (l ResourceSyncRuleList) Len() int      { return len(l) }
+func (l ResourceSyncRuleList) Swap(i, j int) { l[i], l[j] = l[j], l[i] }
+func (l ResourceSyncRuleList) Less(i, j int) bool {
+	if strings.Compare(l[i].Source.Namespace, l[j].Source.Namespace) < 0 {
+		return true
+	}
+	if strings.Compare(l[i].Source.Namespace, l[j].Source.Namespace) > 0 {
+		return false
+	}
+	if strings.Compare(l[i].Source.Name, l[j].Source.Name) < 0 {
+		return true
+	}
+	return false
+}
+
+type ControllerSyncRules struct {
+	Secrets ResourceSyncRuleList `json:"secrets"`
+	Configs ResourceSyncRuleList `json:"configs"`
+}
+
+// ServeSyncRules provides a handler function to return the sync rules of the controller
+func (h *debugHTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	syncRules := ControllerSyncRules{ResourceSyncRuleList{}, ResourceSyncRuleList{}}
+
+	h.controller.syncRuleLock.RLock()
+	defer h.controller.syncRuleLock.RUnlock()
+	syncRules.Secrets = append(syncRules.Secrets, resourceSyncRuleList(h.controller.secretSyncRules)...)
+	syncRules.Configs = append(syncRules.Configs, resourceSyncRuleList(h.controller.configMapSyncRules)...)
+
+	data, err := json.Marshal(syncRules)
+	if err != nil {
+		w.Write([]byte(err.Error()))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Write(data)
+	w.WriteHeader(http.StatusOK)
+}
+
+func resourceSyncRuleList(syncRules map[ResourceLocation]ResourceLocation) ResourceSyncRuleList {
+	rules := make(ResourceSyncRuleList, 0, len(syncRules))
+	for src, dest := range syncRules {
+		rule := ResourceSyncRule{
+			Source:      src,
+			Destination: dest,
+		}
+		rules = append(rules, rule)
+	}
+	sort.Sort(rules)
+	return rules
 }

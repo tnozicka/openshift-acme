@@ -6,6 +6,8 @@ import (
 	"os"
 	"runtime"
 
+	_ "net/http/pprof" // include the default Go profiler mux
+
 	"github.com/golang/glog"
 )
 

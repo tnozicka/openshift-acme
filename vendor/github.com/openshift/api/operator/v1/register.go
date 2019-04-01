@@ -34,6 +34,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(GroupVersion,
 		&Authentication{},
 		&AuthenticationList{},
+		&DNS{},
+		&DNSList{},
 		&Console{},
 		&ConsoleList{},
 		&Etcd{},

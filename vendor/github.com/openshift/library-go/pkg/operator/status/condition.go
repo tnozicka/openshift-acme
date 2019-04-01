@@ -66,13 +66,27 @@ func latestTransitionTime(conditions []operatorv1.OperatorCondition) metav1.Time
 	return latestTransitionTime
 }
 
+func uniq(s []string) []string {
+	seen := make(map[string]struct{}, len(s))
+	j := 0
+	for _, v := range s {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		s[j] = v
+		j++
+	}
+	return s[:j]
+}
+
 func unionMessage(conditions []operatorv1.OperatorCondition) string {
 	messages := []string{}
 	for _, condition := range conditions {
 		if len(condition.Message) == 0 {
 			continue
 		}
-		for _, message := range strings.Split(condition.Message, "\n") {
+		for _, message := range uniq(strings.Split(condition.Message, "\n")) {
 			messages = append(messages, fmt.Sprintf("%s: %s", condition.Type, message))
 		}
 	}
@@ -81,6 +95,9 @@ func unionMessage(conditions []operatorv1.OperatorCondition) string {
 
 func unionReason(conditions []operatorv1.OperatorCondition) string {
 	if len(conditions) == 1 {
+		if len(conditions[0].Reason) != 0 {
+			return conditions[0].Type + conditions[0].Reason
+		}
 		return conditions[0].Type
 	} else {
 		return "MultipleConditionsMatching"
