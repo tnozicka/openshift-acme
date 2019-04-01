@@ -1,2 +1,15 @@
-approvers:
-- tnozicka
+# See the OWNERS docs at https://go.k8s.io/owners
+
+filters:
+  ".*":
+    approvers:
+    - tnozicka
+
+  "^\\.glide.(lock|yaml)$":
+    labels:
+    - "vendor-update"
+
+  "^vendor/.*":
+    labels:
+    - "vendor-update"
+ 
