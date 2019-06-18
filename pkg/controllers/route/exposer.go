@@ -347,6 +347,7 @@ func (e *Exposer) Expose(c *acme.Client, domain string, token string) error {
 		},
 		func() (bool, error) {
 			tr := &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
 				TLSClientConfig: &tls.Config{
 					InsecureSkipVerify: true,
 				},
