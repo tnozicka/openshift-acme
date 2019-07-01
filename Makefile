@@ -8,7 +8,7 @@ GO_TEST_PACKAGES :=./cmd/... ./pkg/...
 
 # we intentionaly don't specify this value because test are making changes to the cluster so we wan't user to configure it explicitely
 GO_ET_KUBECONFIG :="<unspecified>"
-TEST_FLAGS :=-ginkgo.v
+TEST_FLAGS :=
 GO_ET_DOMAIN :=""
 
 # Include the library makefile
