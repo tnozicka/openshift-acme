@@ -1,4 +1,4 @@
-34a35,49
+36a37,51
 >         - name: OPENSHIFT_ACME_NAMESPACE
 >           valueFrom:
 >             fieldRef:
