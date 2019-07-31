@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,32 +26,33 @@ import (
 	"net/http"
 	"net/http/httptest"
 	goruntime "runtime"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
-	// "github.com/go-openapi/spec"
+	openapi "github.com/go-openapi/spec"
 	"github.com/stretchr/testify/assert"
 
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/apimachinery"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/apiserver/pkg/apis/example"
 	examplev1 "k8s.io/apiserver/pkg/apis/example/v1"
-	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"k8s.io/apiserver/pkg/endpoints/discovery"
-	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
+	genericapifilters "k8s.io/apiserver/pkg/endpoints/filters"
+	openapinamer "k8s.io/apiserver/pkg/endpoints/openapi"
 	"k8s.io/apiserver/pkg/registry/rest"
-	etcdtesting "k8s.io/apiserver/pkg/storage/etcd/testing"
+	genericfilters "k8s.io/apiserver/pkg/server/filters"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	restclient "k8s.io/client-go/rest"
-	openapi "k8s.io/kube-openapi/pkg/common"
+	kubeopenapi "k8s.io/kube-openapi/pkg/common"
 )
 
 const (
@@ -74,21 +76,57 @@ func init() {
 		&metav1.APIGroup{},
 		&metav1.APIResourceList{},
 	)
-	example.AddToScheme(scheme)
-	examplev1.AddToScheme(scheme)
+	utilruntime.Must(example.AddToScheme(scheme))
+	utilruntime.Must(examplev1.AddToScheme(scheme))
 }
 
-func testGetOpenAPIDefinitions(ref openapi.ReferenceCallback) map[string]openapi.OpenAPIDefinition {
-	return map[string]openapi.OpenAPIDefinition{}
+func buildTestOpenAPIDefinition() kubeopenapi.OpenAPIDefinition {
+	return kubeopenapi.OpenAPIDefinition{
+		Schema: openapi.Schema{
+			SchemaProps: openapi.SchemaProps{
+				Description: "Description",
+				Properties:  map[string]openapi.Schema{},
+			},
+			VendorExtensible: openapi.VendorExtensible{
+				Extensions: openapi.Extensions{
+					"x-kubernetes-group-version-kind": []map[string]string{
+						{
+							"group":   "",
+							"version": "v1",
+							"kind":    "Getter",
+						},
+						{
+							"group":   "batch",
+							"version": "v1",
+							"kind":    "Getter",
+						},
+						{
+							"group":   "extensions",
+							"version": "v1",
+							"kind":    "Getter",
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func testGetOpenAPIDefinitions(_ kubeopenapi.ReferenceCallback) map[string]kubeopenapi.OpenAPIDefinition {
+	return map[string]kubeopenapi.OpenAPIDefinition{
+		"k8s.io/apimachinery/pkg/apis/meta/v1.Status":          {},
+		"k8s.io/apimachinery/pkg/apis/meta/v1.APIVersions":     {},
+		"k8s.io/apimachinery/pkg/apis/meta/v1.APIGroupList":    {},
+		"k8s.io/apimachinery/pkg/apis/meta/v1.APIGroup":        buildTestOpenAPIDefinition(),
+		"k8s.io/apimachinery/pkg/apis/meta/v1.APIResourceList": {},
+	}
 }
 
 // setUp is a convience function for setting up for (most) tests.
-func setUp(t *testing.T) (*etcdtesting.EtcdTestServer, Config, *assert.Assertions) {
-	etcdServer, _ := etcdtesting.NewUnsecuredEtcd3TestClientServer(t, scheme)
-
+func setUp(t *testing.T) (Config, *assert.Assertions) {
 	config := NewConfig(codecs)
+	config.ExternalAddress = "192.168.10.4:443"
 	config.PublicAddress = net.ParseIP("192.168.10.4")
-	config.RequestContextMapper = genericapirequest.NewRequestContextMapper()
 	config.LegacyAPIGroupPrefixes = sets.NewString("/api")
 	config.LoopbackClientConfig = &restclient.Config{}
 
@@ -97,41 +135,33 @@ func setUp(t *testing.T) (*etcdtesting.EtcdTestServer, Config, *assert.Assertion
 		t.Fatal("unable to create fake client set")
 	}
 
-	// TODO restore this test, but right now, eliminate our cycle
-	// config.OpenAPIConfig = DefaultOpenAPIConfig(testGetOpenAPIDefinitions, runtime.NewScheme())
-	// config.OpenAPIConfig.Info = &spec.Info{
-	// 	InfoProps: spec.InfoProps{
-	// 		Title:   "Kubernetes",
-	// 		Version: "unversioned",
-	// 	},
-	// }
+	config.OpenAPIConfig = DefaultOpenAPIConfig(testGetOpenAPIDefinitions, openapinamer.NewDefinitionNamer(runtime.NewScheme()))
+	config.OpenAPIConfig.Info.Version = "unversioned"
 	config.SwaggerConfig = DefaultSwaggerConfig()
 	sharedInformers := informers.NewSharedInformerFactory(clientset, config.LoopbackClientConfig.Timeout)
 	config.Complete(sharedInformers)
 
-	return etcdServer, *config, assert.New(t)
+	return *config, assert.New(t)
 }
 
-func newMaster(t *testing.T) (*GenericAPIServer, *etcdtesting.EtcdTestServer, Config, *assert.Assertions) {
-	etcdserver, config, assert := setUp(t)
+func newMaster(t *testing.T) (*GenericAPIServer, Config, *assert.Assertions) {
+	config, assert := setUp(t)
 
-	s, err := config.Complete(nil).New("test", EmptyDelegate)
+	s, err := config.Complete(nil).New("test", NewEmptyDelegate())
 	if err != nil {
 		t.Fatalf("Error in bringing up the server: %v", err)
 	}
-	return s, etcdserver, config, assert
+	return s, config, assert
 }
 
 // TestNew verifies that the New function returns a GenericAPIServer
 // using the configuration properly.
 func TestNew(t *testing.T) {
-	s, etcdserver, config, assert := newMaster(t)
-	defer etcdserver.Terminate(t)
+	s, config, assert := newMaster(t)
 
 	// Verify many of the variables match their config counterparts
 	assert.Equal(s.legacyAPIGroupPrefixes, config.LegacyAPIGroupPrefixes)
 	assert.Equal(s.admissionControl, config.AdmissionControl)
-	assert.Equal(s.RequestContextMapper(), config.RequestContextMapper)
 
 	// these values get defaulted
 	assert.Equal(net.JoinHostPort(config.PublicAddress.String(), "443"), s.ExternalAddress)
@@ -141,13 +171,12 @@ func TestNew(t *testing.T) {
 
 // Verifies that AddGroupVersions works as expected.
 func TestInstallAPIGroups(t *testing.T) {
-	etcdserver, config, assert := setUp(t)
-	defer etcdserver.Terminate(t)
+	config, assert := setUp(t)
 
 	config.LegacyAPIGroupPrefixes = sets.NewString("/apiPrefix")
 	config.DiscoveryAddresses = discovery.DefaultAddresses{DefaultAddress: "ExternalAddress"}
 
-	s, err := config.Complete(nil).New("test", EmptyDelegate)
+	s, err := config.Complete(nil).New("test", NewEmptyDelegate())
 	if err != nil {
 		t.Fatalf("Error in bringing up the server: %v", err)
 	}
@@ -161,26 +190,8 @@ func TestInstallAPIGroups(t *testing.T) {
 		scheme.AddKnownTypes(v1GroupVersion, &metav1.Status{})
 		metav1.AddToGroupVersion(scheme, v1GroupVersion)
 
-		interfacesFor := func(version schema.GroupVersion) (*meta.VersionInterfaces, error) {
-			return &meta.VersionInterfaces{
-				ObjectConvertor:  scheme,
-				MetadataAccessor: meta.NewAccessor(),
-			}, nil
-		}
-
-		mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{gv}, interfacesFor)
-		for kind := range scheme.KnownTypes(gv) {
-			mapper.Add(gv.WithKind(kind), meta.RESTScopeNamespace)
-		}
-		groupMeta := apimachinery.GroupMeta{
-			GroupVersion:  gv,
-			GroupVersions: []schema.GroupVersion{gv},
-			RESTMapper:    mapper,
-			InterfacesFor: interfacesFor,
-		}
-
 		return APIGroupInfo{
-			GroupMeta: groupMeta,
+			PrioritizedVersions: []schema.GroupVersion{gv},
 			VersionedResourcesStorageMap: map[string]map[string]rest.Storage{
 				gv.Version: {
 					"getter":  &testGetterStorage{Version: gv.Version},
@@ -208,7 +219,7 @@ func TestInstallAPIGroups(t *testing.T) {
 	for _, api := range apis[1:] {
 		err = s.InstallAPIGroup(&api)
 		assert.NoError(err)
-		groupPaths = append(groupPaths, APIGroupPrefix+"/"+api.GroupMeta.GroupVersion.Group) // /apis/<group>
+		groupPaths = append(groupPaths, APIGroupPrefix+"/"+api.PrioritizedVersions[0].Group) // /apis/<group>
 	}
 
 	server := httptest.NewServer(s.Handler)
@@ -249,19 +260,19 @@ func TestInstallAPIGroups(t *testing.T) {
 				continue
 			}
 
-			if got, expected := group.Name, info.GroupMeta.GroupVersion.Group; got != expected {
+			if got, expected := group.Name, info.PrioritizedVersions[0].Group; got != expected {
 				t.Errorf("[%d] unexpected group name at path %q: got=%q expected=%q", i, path, got, expected)
 				continue
 			}
 
-			if got, expected := group.PreferredVersion.Version, info.GroupMeta.GroupVersion.Version; got != expected {
+			if got, expected := group.PreferredVersion.Version, info.PrioritizedVersions[0].Version; got != expected {
 				t.Errorf("[%d] unexpected group version at path %q: got=%q expected=%q", i, path, got, expected)
 				continue
 			}
 		}
 
 		// should serve APIResourceList at group path + /<group-version>
-		path = path + "/" + info.GroupMeta.GroupVersion.Version
+		path = path + "/" + info.PrioritizedVersions[0].Version
 		resp, err = http.Get(server.URL + path)
 		if err != nil {
 			t.Errorf("[%d] unexpected error getting path %q path: %v", i, path, err)
@@ -283,7 +294,7 @@ func TestInstallAPIGroups(t *testing.T) {
 			continue
 		}
 
-		if got, expected := resources.GroupVersion, info.GroupMeta.GroupVersion.String(); got != expected {
+		if got, expected := resources.GroupVersion, info.PrioritizedVersions[0].String(); got != expected {
 			t.Errorf("[%d] unexpected groupVersion at path %q: got=%q expected=%q", i, path, got, expected)
 			continue
 		}
@@ -308,8 +319,7 @@ func TestInstallAPIGroups(t *testing.T) {
 }
 
 func TestPrepareRun(t *testing.T) {
-	s, etcdserver, config, assert := newMaster(t)
-	defer etcdserver.Terminate(t)
+	s, config, assert := newMaster(t)
 
 	assert.NotNil(config.SwaggerConfig)
 
@@ -336,8 +346,7 @@ func TestPrepareRun(t *testing.T) {
 
 // TestCustomHandlerChain verifies the handler chain with custom handler chain builder functions.
 func TestCustomHandlerChain(t *testing.T) {
-	etcdserver, config, _ := setUp(t)
-	defer etcdserver.Terminate(t)
+	config, _ := setUp(t)
 
 	var protected, called bool
 
@@ -351,7 +360,7 @@ func TestCustomHandlerChain(t *testing.T) {
 		called = true
 	})
 
-	s, err := config.Complete(nil).New("test", EmptyDelegate)
+	s, err := config.Complete(nil).New("test", NewEmptyDelegate())
 	if err != nil {
 		t.Fatalf("Error in bringing up the server: %v", err)
 	}
@@ -390,13 +399,12 @@ func TestCustomHandlerChain(t *testing.T) {
 
 // TestNotRestRoutesHaveAuth checks that special non-routes are behind authz/authn.
 func TestNotRestRoutesHaveAuth(t *testing.T) {
-	etcdserver, config, _ := setUp(t)
-	defer etcdserver.Terminate(t)
+	config, _ := setUp(t)
 
 	authz := mockAuthorizer{}
 
 	config.LegacyAPIGroupPrefixes = sets.NewString("/apiPrefix")
-	config.Authorizer = &authz
+	config.Authorization.Authorizer = &authz
 
 	config.EnableSwaggerUI = true
 	config.EnableIndex = true
@@ -406,7 +414,7 @@ func TestNotRestRoutesHaveAuth(t *testing.T) {
 	kubeVersion := fakeVersion()
 	config.Version = &kubeVersion
 
-	s, err := config.Complete(nil).New("test", EmptyDelegate)
+	s, err := config.Complete(nil).New("test", NewEmptyDelegate())
 	if err != nil {
 		t.Fatalf("Error in bringing up the server: %v", err)
 	}
@@ -417,6 +425,7 @@ func TestNotRestRoutesHaveAuth(t *testing.T) {
 		{"/"},
 		{"/swagger-ui/"},
 		{"/debug/pprof/"},
+		{"/debug/flags/"},
 		{"/version"},
 	} {
 		resp := httptest.NewRecorder()
@@ -437,37 +446,17 @@ type mockAuthorizer struct {
 	lastURI string
 }
 
-func (authz *mockAuthorizer) Authorize(a authorizer.Attributes) (authorized bool, reason string, err error) {
+func (authz *mockAuthorizer) Authorize(a authorizer.Attributes) (authorized authorizer.Decision, reason string, err error) {
 	authz.lastURI = a.GetPath()
-	return true, "", nil
-}
-
-type mockAuthenticator struct {
-	lastURI string
-}
-
-func (authn *mockAuthenticator) AuthenticateRequest(req *http.Request) (user.Info, bool, error) {
-	authn.lastURI = req.RequestURI
-	return &user.DefaultInfo{
-		Name: "foo",
-	}, true, nil
-}
-
-func decodeResponse(resp *http.Response, obj interface{}) error {
-	defer resp.Body.Close()
-
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(data, obj); err != nil {
-		return err
-	}
-	return nil
+	return authorizer.DecisionAllow, "", nil
 }
 
 type testGetterStorage struct {
 	Version string
+}
+
+func (p *testGetterStorage) NamespaceScoped() bool {
+	return true
 }
 
 func (p *testGetterStorage) New() runtime.Object {
@@ -479,12 +468,16 @@ func (p *testGetterStorage) New() runtime.Object {
 	}
 }
 
-func (p *testGetterStorage) Get(ctx genericapirequest.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
+func (p *testGetterStorage) Get(ctx context.Context, name string, options *metav1.GetOptions) (runtime.Object, error) {
 	return nil, nil
 }
 
 type testNoVerbsStorage struct {
 	Version string
+}
+
+func (p *testNoVerbsStorage) NamespaceScoped() bool {
+	return true
 }
 
 func (p *testNoVerbsStorage) New() runtime.Object {
@@ -507,5 +500,83 @@ func fakeVersion() version.Info {
 		GoVersion:    goruntime.Version(),
 		Compiler:     goruntime.Compiler,
 		Platform:     fmt.Sprintf("%s/%s", goruntime.GOOS, goruntime.GOARCH),
+	}
+}
+
+// TestGracefulShutdown verifies server shutdown after request handler finish.
+func TestGracefulShutdown(t *testing.T) {
+	config, _ := setUp(t)
+
+	var graceShutdown bool
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	config.BuildHandlerChainFunc = func(apiHandler http.Handler, c *Config) http.Handler {
+		handler := genericfilters.WithWaitGroup(apiHandler, c.LongRunningFunc, c.HandlerChainWaitGroup)
+		handler = genericapifilters.WithRequestInfo(handler, c.RequestInfoResolver)
+		return handler
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		wg.Done()
+		time.Sleep(2 * time.Second)
+		w.WriteHeader(http.StatusOK)
+		graceShutdown = true
+	})
+
+	s, err := config.Complete(nil).New("test", NewEmptyDelegate())
+	if err != nil {
+		t.Fatalf("Error in bringing up the server: %v", err)
+	}
+
+	s.Handler.NonGoRestfulMux.Handle("/test", handler)
+
+	insecureServer := &http.Server{
+		Addr:    "0.0.0.0:0",
+		Handler: s.Handler,
+	}
+	stopCh := make(chan struct{})
+
+	ln, err := net.Listen("tcp", insecureServer.Addr)
+	if err != nil {
+		t.Errorf("failed to listen on %v: %v", insecureServer.Addr, err)
+	}
+
+	// get port
+	serverPort := ln.Addr().(*net.TCPAddr).Port
+	err = RunServer(insecureServer, ln, 10*time.Second, stopCh)
+	if err != nil {
+		t.Errorf("RunServer err: %v", err)
+	}
+
+	graceCh := make(chan struct{})
+	// mock a client request
+	go func() {
+		resp, err := http.Get("http://127.0.0.1:" + strconv.Itoa(serverPort) + "/test")
+		if err != nil {
+			t.Errorf("Unexpected http error: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Unexpected http status code: %v", resp.StatusCode)
+		}
+		close(graceCh)
+	}()
+
+	// close stopCh after request sent to server to guarantee request handler is running.
+	wg.Wait()
+	close(stopCh)
+	// wait for wait group handler finish
+	s.HandlerChainWaitGroup.Wait()
+
+	// check server all handlers finished.
+	if !graceShutdown {
+		t.Errorf("server shutdown not gracefully.")
+	}
+	// check client to make sure receive response.
+	select {
+	case <-graceCh:
+		t.Logf("server shutdown gracefully.")
+	case <-time.After(30 * time.Second):
+		t.Errorf("Timed out waiting for response.")
 	}
 }

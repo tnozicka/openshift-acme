@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/apiserver/pkg/storage/names"
 	"k8s.io/client-go/kubernetes"
+	watchtools "k8s.io/client-go/tools/watch"
 	"k8s.io/client-go/util/retry"
 
 	projectapiv1 "github.com/openshift/api/project/v1"
@@ -51,7 +53,9 @@ func CreateTestingNamespace(f *Framework, name string, labels map[string]string)
 	if err != nil {
 		return got, err
 	}
-	_, err = watch.Until(30*time.Second, w, func(event watch.Event) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err = watchtools.UntilWithoutRetry(ctx, w, func(event watch.Event) (bool, error) {
 		switch t := event.Object.(type) {
 		case *v1.ServiceAccount:
 			return len(t.Secrets) > 0, nil

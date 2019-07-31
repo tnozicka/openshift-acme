@@ -1,4 +1,3 @@
-[![Build Status](https://travis-ci.org/tnozicka/openshift-acme.svg?branch=master)](https://travis-ci.org/tnozicka/openshift-acme)
 # openshift-acme
 openshift-acme is ACME Controller for OpenShift and Kubernetes clusters. It will automatically provision certficates using ACME protocol and manage their lifecycle (like automatic renewals).
 

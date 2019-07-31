@@ -55,7 +55,7 @@ func getStatisfiableCombinations(authorization *acme.Authorization, exposers map
 		satisfiable := true
 		for _, challengeId := range combination {
 			if challengeId >= len(authorization.Challenges) {
-				glog.Warning("ACME authorization has contains challengeId %d out of range; %#v", challengeId, authorization)
+				glog.Warningf("ACME authorization has contains challengeId %d out of range; %#v", challengeId, authorization)
 				satisfiable = false
 				continue
 			}

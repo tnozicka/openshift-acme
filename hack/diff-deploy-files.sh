@@ -1,5 +1,10 @@
 #!/bin/bash
 set -e
+set -u
+set -o pipefail
+
+# For comparing dirs we need to make sure files are sorted in consistent order
+export LC_COLLATE=C
 
 script_full_path=$(readlink -f $0)
 script_dir=$(dirname ${script_full_path})
@@ -17,9 +22,9 @@ done
 
 diff deploy/letsencrypt-staging/cluster-wide/clusterrole.yaml deploy/letsencrypt-staging/single-namespace/role.yaml > ${outdir}/staging-roles.diff || [[ $? == 1 ]]
 
-diff deploy/letsencrypt-live/cluster-wide/ deploy/letsencrypt-staging/cluster-wide/ > ${outdir}/live-staging-cluster-wide.diff || [[ $? == 1 ]]
+diff -r deploy/letsencrypt-live/cluster-wide/ deploy/letsencrypt-staging/cluster-wide/ > ${outdir}/live-staging-cluster-wide.diff || [[ $? == 1 ]]
 
-diff deploy/letsencrypt-live/single-namespace/ deploy/letsencrypt-staging/single-namespace/ > ${outdir}/live-staging-single-namespace.diff || [[ $? == 1 ]]
+diff -r deploy/letsencrypt-live/single-namespace/ deploy/letsencrypt-staging/single-namespace/ > ${outdir}/live-staging-single-namespace.diff || [[ $? == 1 ]]
 
 
 diff -r deploy/.diffs ${outdir}
