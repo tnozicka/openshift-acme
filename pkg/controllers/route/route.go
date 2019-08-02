@@ -107,7 +107,7 @@ func NewRouteController(
 	selfNamespace string,
 	selfSelector map[string]string,
 	defaultRouteTermination routev1.InsecureEdgeTerminationPolicyType,
-	timeout int,
+	timeout time.Duration,
 ) *RouteController {
 
 	eventBroadcaster := record.NewBroadcaster()
@@ -144,7 +144,7 @@ func NewRouteController(
 
 		defaultRouteTermination: defaultRouteTermination,
 
-		acmeTimeout: time.Duration(timeout) * time.Second,
+		acmeTimeout: timeout,
 	}
 
 	routeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{

@@ -97,7 +97,7 @@ func NewOpenShiftAcmeCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 	rootCmd.PersistentFlags().StringP(Flag_ExposerListenIP, "", "0.0.0.0", "Listen address for http-01 server")
 	rootCmd.PersistentFlags().StringP(Flag_SelfNamespace_Key, "", "", "Namespace where this controller and associated objects are deployed to. Defaults to current namespace if this program is running inside of the cluster.")
 	rootCmd.PersistentFlags().StringP(Flag_DefaultRouteTermination_Key, "", string(routev1.InsecureEdgeTerminationPolicyRedirect), "Default TLS termination of the route.")
-	rootCmd.PersistentFlags().Int32P(Flag_Timeout, "", 60, "Timeout for talking to ACME server")
+	rootCmd.PersistentFlags().DurationP(Flag_Timeout, "", 60*time.Second, "Timeout for talking to ACME server")
 
 	from := flag.CommandLine
 	if flag := from.Lookup("v"); flag != nil {
@@ -254,8 +254,8 @@ func RunServer(v *viper.Viper, cmd *cobra.Command, out io.Writer) error {
 		return fmt.Errorf("flag %q has invalid value: %q", Flag_DefaultRouteTermination_Key, defaultRouteTermination)
 	}
 
-	timeout := v.GetInt(Flag_Timeout)
-	glog.Infof("ACME timeout is %d seconds", timeout)
+	timeout := v.GetDuration(Flag_Timeout)
+	glog.Infof("ACME timeout is %s seconds", timeout)
 
 	routeInformer := routeinformersv1.NewRouteInformer(routeClientset, namespace, ResyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	glog.Infof("Starting Route informer")
