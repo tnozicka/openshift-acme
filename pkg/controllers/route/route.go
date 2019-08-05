@@ -609,7 +609,6 @@ func (rc *RouteController) handle(key string) error {
 }
 
 func (rc *RouteController) syncSecret(routeReadOnly *routev1.Route) error {
-	// TODO: consider option of choosing a oldSecret name using an annotation
 	secretName := routeReadOnly.Annotations[api.TlsSecretNameAnnotation]
 	if secretName == "" {
 		secretName = routeReadOnly.Name
