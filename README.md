@@ -1,5 +1,5 @@
 # openshift-acme
-openshift-acme is ACME Controller for OpenShift and Kubernetes clusters. It will automatically provision certficates using ACME protocol and manage their lifecycle (like automatic renewals).
+openshift-acme is ACME Controller for OpenShift and Kubernetes clusters. It will automatically provision certificates using ACME protocol and manage their lifecycle (like automatic renewals).
 
 Controller is provider independent but to start with we would recommend you to use Let's Encrypt (https://letsencrypt.org). For more information checkout [section Deploy](#deploy).)
 
