@@ -1,10 +1,15 @@
 package util
 
 import (
+	"crypto/sha256"
+	"encoding/base32"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/onsi/ginkgo"
+	"github.com/onsi/ginkgo/reporters"
 	"github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,17 +24,30 @@ func KubeConfigPath() string {
 	return os.Getenv("KUBECONFIG")
 }
 
-func LookupDomain() (string, bool) {
-	return os.LookupEnv("TEST_DOMAIN")
+func LookupBaseDomain() (string, bool) {
+	return os.LookupEnv("E2E_DOMAIN")
 }
 
-func GetDomain() string {
-	domain, _ := LookupDomain()
+func GetBaseDomain() string {
+	domain, _ := LookupBaseDomain()
 	return domain
 }
 
-func DeleteAccountBetweenStepsInNamespace() string {
-	return os.Getenv("DELETE_ACCOUNT_BETWEEN_STEPS_IN_NAMESPACE")
+func GenerateDomain(namespace, name string) string {
+	domain, ok := LookupBaseDomain()
+	if !ok || len(domain) == 0 {
+		return ""
+	}
+
+	// CommonName is 64 bytes and we need a subdomain
+	if len(domain) > 64-3 {
+		panic("domain too long")
+	}
+
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%s", namespace, name)))
+	subdomain := strings.ToLower(base32.HexEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))[:64-1-len(domain)]
+
+	return fmt.Sprintf("%s.%s", subdomain, domain)
 }
 
 func InitTest() {
@@ -50,8 +68,8 @@ func InitTest() {
 		framework.Failf("Invalid DeleteTestingNSPolicy: %q", TestContext.DeleteTestingNSPolicy)
 	}
 
-	fixedNamespace := os.Getenv("FIXED_NAMESPACE")
-	if fixedNamespace != "" {
+	fixedNamespace := os.Getenv("E2E_FIXED_NAMESPACE")
+	if len(fixedNamespace) != 0 {
 		TestContext.CreateTestingNS = func(f *framework.Framework, name string, labels map[string]string) (*corev1.Namespace, error) {
 			return &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
@@ -79,16 +97,20 @@ func InitTest() {
 		TestContext.CreateTestingNS = framework.CreateTestingProjectAndChangeUser
 	}
 
-	domain, found := LookupDomain()
-	if !found {
-		framework.Failf("You have to specify TEST_DOMAIN!")
-	}
-	framework.Logf("TEST_DOMAIN is %q", domain)
-
-	framework.Logf("DeleteAccountBetweenStepsInNamespace: %q", DeleteAccountBetweenStepsInNamespace())
+	framework.Logf("E2E_DOMAIN is %q", GetBaseDomain())
+	framework.Logf("E2E_FIXED_NAMESPACE is %q", os.Getenv("E2E_FIXED_NAMESPACE"))
+	framework.Logf("E2E_JUNITFILE is %q", os.Getenv("E2E_JUNITFILE"))
 }
 
 func ExecuteTest(t *testing.T, suite string) {
 	gomega.RegisterFailHandler(ginkgo.Fail)
-	ginkgo.RunSpecs(t, suite)
+
+	junitFile := os.Getenv("E2E_JUNITFILE")
+	if len(junitFile) > 0 {
+		junitReporter := reporters.NewJUnitReporter(junitFile)
+		ginkgo.RunSpecsWithDefaultAndCustomReporters(t, suite, []ginkgo.Reporter{junitReporter})
+	} else {
+		ginkgo.RunSpecs(t, suite)
+	}
+
 }

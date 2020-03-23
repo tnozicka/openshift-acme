@@ -6,13 +6,10 @@ all: build
 GO_BUILD_PACKAGES :=./cmd/...
 GO_TEST_PACKAGES :=./cmd/... ./pkg/...
 
-# we intentionaly don't specify this value because test are making changes to the cluster so we wan't user to configure it explicitely
-GO_ET_KUBECONFIG :="<unspecified>"
-TEST_FLAGS :=
-GO_ET_DOMAIN :=""
+IMAGE_REGISTRY :=quay.io
 
 # Include the library makefile
-include $(addprefix ./vendor/github.com/openshift/library-go/alpha-build-machinery/make/, \
+include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 	golang.mk \
 	targets/openshift/deps.mk \
 	targets/openshift/images.mk \
@@ -24,7 +21,8 @@ include $(addprefix ./vendor/github.com/openshift/library-go/alpha-build-machine
 # $2 - Dockerfile path
 # $3 - context directory for image build
 # It will generate target "image-$(1)" for builing the image an binding it as a prerequisite to target "images".
-$(call build-image,openshift-acme-controller,./images/openshift-acme-controller/Dockerfile,.)
+$(call build-image,openshift-acme-controller,$(IMAGE_REGISTRY)/tnozicka/openshift-acme:controller,./images/openshift-acme-controller/Dockerfile,.)
+$(call build-image,openshift-acme-exposer,$(IMAGE_REGISTRY)/tnozicka/openshift-acme:exposer, ./images/openshift-acme-exposer/Dockerfile,.)
 
 
 verify-deploy-files:
@@ -42,7 +40,29 @@ update-deploy-files:
 update: update-deploy-files
 .PHONY: update
 
-
-test-extended:
-	go test $(GOFLAGS) ./test/e2e/openshift -args $(TEST_FLAGS)
+test-e2e: export E2E_DOMAIN ?=$(shell oc get ingresses.config.openshift.io cluster --template='{{.spec.domain}}')
+test-e2e: export E2E_CONTROLLER_NAMESPACE?=acme-controller
+test-e2e: export E2E_FIXED_NAMESPACE?=
+test-e2e: export E2E_ARGS :=-args -ginkgo.progress -ginkgo.v
+test-e2e: export E2E_JUNIT ?=
+#test-e2e: export E2E_FIXED_NAMESPACE:=$(E2E_FIXED_NAMESPACE)
+test-e2e: GO_TEST_PACKAGES:=./test/e2e/openshift
+# FIXME: needs a change in openshift/build-machinery-go
+test-e2e: GO_TEST_PACKAGES+= $(E2E_ARGS)
+test-e2e: GO_TEST_FLAGS:=-v
+test-e2e: test-unit
+test-e2e:
 .PHONY: test-extended
+
+ci-test-e2e-cluster-wide:
+	$(MAKE) --no-print-directory test-e2e E2E_CONTROLLER_NAMESPACE:=acme-controller E2E_FIXED_NAMESPACE:=
+.PHONY: ci-test-e2e-cluster-wide
+
+ci-test-e2e-single-namespace:
+	$(MAKE) --no-print-directory test-e2e E2E_CONTROLLER_NAMESPACE:=acme-controller E2E_FIXED_NAMESPACE:=acme-controller
+.PHONY: ci-test-e2e-single-namespace
+
+ci-test-e2e-specific-namespaces:
+	$(MAKE) --no-print-directory test-e2e E2E_CONTROLLER_NAMESPACE:=acme-controller E2E_FIXED_NAMESPACE:=acme-controller
+	$(MAKE) --no-print-directory test-e2e E2E_CONTROLLER_NAMESPACE:=acme-controller E2E_FIXED_NAMESPACE:=test
+.PHONY: ci-test-e2e-specific-namespaces

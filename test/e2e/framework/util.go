@@ -30,7 +30,7 @@ func CreateTestingNamespace(f *Framework, name string, labels map[string]string)
 
 	namespaceObj := &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: fmt.Sprintf("e2e-tests-%v-", name),
+			GenerateName: fmt.Sprintf("e2e-%v-", name),
 			Labels:       labels,
 		},
 	}

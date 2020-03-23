@@ -8,14 +8,13 @@ import (
 	"runtime"
 	"time"
 
+	routescheme "github.com/openshift/client-go/route/clientset/versioned/scheme"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
 
-	routev1 "github.com/openshift/api/route/v1"
-
 	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
-	cmd "github.com/tnozicka/openshift-acme/pkg/cmd/openshift-acme-controller"
+	cmd "github.com/tnozicka/openshift-acme/pkg/cmd/openshift-acme-exposer"
 )
 
 func init() {
@@ -33,9 +32,10 @@ func main() {
 		runtime.GOMAXPROCS(runtime.NumCPU())
 	}
 
-	utilruntime.Must(routev1.Install(scheme.Scheme))
+	// Register OpenShift groups to kubernetes Scheme
+	utilruntime.Must(routescheme.AddToScheme(scheme.Scheme))
 
-	command := cmd.NewOpenshiftAcmeControllerCommand(genericclioptions.IOStreams{
+	command := cmd.NewOpenShiftAcmeExposerCommand(genericclioptions.IOStreams{
 		In:     os.Stdin,
 		Out:    os.Stdout,
 		ErrOut: os.Stderr,

@@ -1,0 +1,5 @@
+7d6
+<   annotations:
+27a27,28
+>         - --namespace=acme-controller
+>         - --namespace=test
