@@ -1,9 +1,0 @@
-all:
-	$(MAKE) -C . build
-	[[ -f ./openshift ]]
-	[[ -f ./oc ]]
-
-	$(MAKE) -C . clean
-	[[ ! -f ./openshift ]]
-	[[ ! -f ./oc ]]
-.PHONY: all
