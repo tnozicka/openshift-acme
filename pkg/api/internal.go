@@ -1,5 +1,9 @@
 package api
 
+import (
+	"k8s.io/apimachinery/pkg/labels"
+)
+
 const (
 	ForwardingRouteSuffix = "acme"
 	ExposerLabelName      = "acme.openshift.io/exposer"
@@ -12,4 +16,11 @@ const (
 	AcmeStateNeedsCert       = "NeedsCertificate"
 	AcmeStateWaitingForAuthz = "WaitingForAuthz"
 	AcmeStateOk              = "OK"
+)
+
+var (
+	AccountLabelSet = labels.Set{
+		"managed-by": "openshift-acme",
+		"type":       "CertIssuer",
+	}
 )

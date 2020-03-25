@@ -6,7 +6,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 )
 
 var (
@@ -21,10 +21,10 @@ func setupStopChannel() {
 	signal.Notify(c, shutdownSignals...)
 	go func() {
 		s := <-c
-		glog.Infof("Received shutdown signal: %s; shutting down...", s)
+		klog.Infof("Received shutdown signal: %s; shutting down...", s)
 		close(stopChannel)
 		<-c
-		glog.Infof("Received second shutdown signal: %s; exiting...", s)
+		klog.Infof("Received second shutdown signal: %s; exiting...", s)
 		os.Exit(1) // second signal. Exit directly.
 	}()
 }

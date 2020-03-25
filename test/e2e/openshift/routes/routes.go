@@ -7,12 +7,12 @@ import (
 	g "github.com/onsi/ginkgo"
 	o "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
-	"github.com/tnozicka/openshift-acme/pkg/acme/client/builder"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apiserver/pkg/storage/names"
 	watchtools "k8s.io/client-go/tools/watch"
 
 	"github.com/tnozicka/openshift-acme/pkg/api"
@@ -27,48 +27,6 @@ const (
 	CertificateProvisioningTimeout = 5 * time.Minute
 	SyncTimeout                    = 30 * time.Second
 )
-
-func DeleteACMEAccountIfRequested(f *framework.Framework, notFoundOK bool) error {
-	namespace := exutil.DeleteAccountBetweenStepsInNamespace()
-	if namespace == "" {
-		return nil
-	}
-	name := "acme-account"
-
-	// We need to deactivate account first because controller uses informer and might have it cached
-	secret, err := f.KubeAdminClientSet().CoreV1().Secrets(namespace).Get(name, metav1.GetOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			if !notFoundOK {
-				return err
-			}
-		} else {
-			return err
-		}
-	}
-
-	client, err := builder.BuildClientFromSecret(secret)
-	if err != nil {
-		return err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	client.DeactivateAccount(ctx, client.Account)
-
-	var grace int64 = 0
-	propagation := metav1.DeletePropagationForeground
-	framework.Logf("Deleting account Secret %s/%s", namespace, name)
-	err = f.KubeAdminClientSet().CoreV1().Secrets(namespace).Delete(name, &metav1.DeleteOptions{
-		PropagationPolicy:  &propagation,
-		GracePeriodSeconds: &grace,
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
 
 func validateSyncedSecret(f *framework.Framework, route *routev1.Route) {
 	g.By("Waiting for Route's certificate to be synced to a Secret")
@@ -127,14 +85,14 @@ func validateTemporaryObjectsAreDeleted(f *framework.Framework, route *routev1.R
 		o.Expect(tmpService.DeletionTimestamp).NotTo(o.BeNil())
 	}
 
-	tmpEndpoints, err := f.KubeClientSet().CoreV1().Endpoints(route.Namespace).List(metav1.ListOptions{
+	tmpReplicaSets, err := f.KubeClientSet().AppsV1().ReplicaSets(route.Namespace).List(metav1.ListOptions{
 		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
 			api.ExposerForLabelName: string(route.UID),
 		}).String(),
 	})
 	o.Expect(err).NotTo(o.HaveOccurred())
-	for _, tmpEndpoint := range tmpEndpoints.Items {
-		o.Expect(tmpEndpoint.DeletionTimestamp).NotTo(o.BeNil())
+	for _, tmpReplicaSet := range tmpReplicaSets.Items {
+		o.Expect(tmpReplicaSet.DeletionTimestamp).NotTo(o.BeNil())
 	}
 }
 
@@ -145,28 +103,24 @@ var _ = g.Describe("Routes", func() {
 	g.It("should be provisioned with certificates", func() {
 		namespace := f.Namespace()
 
-		// ACME server will likely cache the validation for our domain and won't retry it so soon.
-		err := DeleteACMEAccountIfRequested(f, true)
-
 		g.By("creating new Route without TLS")
+		name := names.SimpleNameGenerator.GenerateName("test-")
 		route := &routev1.Route{
 			ObjectMeta: metav1.ObjectMeta{
-				// Test that the exposing goes fine even with a subdomain in name as other objects
-				// whose name might be based on this one may not support it if not normalized.
-				// See https://github.com/tnozicka/openshift-acme/issues/50
-				Name: "subdomain.test",
+				Name: name,
 				Annotations: map[string]string{
-					"kubernetes.io/tls-acme": "true",
+					"kubernetes.io/tls-acme":        "true",
+					"acme.openshift.io/secret-name": "",
 				},
 			},
 			Spec: routev1.RouteSpec{
-				Host: exutil.GetDomain(),
+				Host: exutil.GenerateDomain(namespace, name),
 				To: routev1.RouteTargetReference{
 					Name: "non-existing",
 				},
 			},
 		}
-		route, err = f.RouteClientset().RouteV1().Routes(namespace).Create(route)
+		route, err := f.RouteClientset().RouteV1().Routes(namespace).Create(route)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		g.By("waiting for Route to be admitted by the router")
@@ -214,10 +168,6 @@ var _ = g.Describe("Routes", func() {
 
 		validateSyncedSecret(f, route)
 		validateTemporaryObjectsAreDeleted(f, route)
-
-		// ACME server will likely cache the validation for our domain and won't retry it so soon.
-		err = DeleteACMEAccountIfRequested(f, false)
-		o.Expect(err).NotTo(o.HaveOccurred())
 
 		g.By("deleting the initial certificate and waiting for new one to be provisioned")
 		routeCopy := route.DeepCopy()
@@ -294,14 +244,13 @@ var _ = g.Describe("Routes", func() {
 	g.It("should have expired certificates replaced", func() {
 		namespace := f.Namespace()
 
-		// ACME server will likely cache the validation for our domain and won't retry it so soon.
-		err := DeleteACMEAccountIfRequested(f, true)
-
 		g.By("creating new Route with expired certificate")
 		now := time.Now()
 		notBefore := now.Add(-1 * time.Hour)
 		notAfter := now.Add(-1 * time.Minute)
-		certData, err := generateCertificate([]string{exutil.GetDomain()}, notBefore, notAfter)
+		name := names.SimpleNameGenerator.GenerateName("test-")
+		domain := exutil.GenerateDomain(namespace, name)
+		certData, err := generateCertificate([]string{domain}, notBefore, notAfter)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		certificate, err := certData.Certificate()
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -309,21 +258,22 @@ var _ = g.Describe("Routes", func() {
 
 		route := &routev1.Route{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
+				Name: name,
 				Annotations: map[string]string{
-					"kubernetes.io/tls-acme": "true",
+					"kubernetes.io/tls-acme":        "true",
+					"acme.openshift.io/secret-name": "",
 				},
 			},
 			Spec: routev1.RouteSpec{
-				Host: exutil.GetDomain(),
+				Host: domain,
 				To: routev1.RouteTargetReference{
 					Name: "non-existing",
 				},
 				TLS: &routev1.TLSConfig{
 					Termination:                   routev1.TLSTerminationEdge,
 					InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyAllow,
-					Key:         string(certData.Key),
-					Certificate: string(certData.Crt),
+					Key:                           string(certData.Key),
+					Certificate:                   string(certData.Crt),
 				},
 			},
 		}
@@ -378,40 +328,40 @@ var _ = g.Describe("Routes", func() {
 	g.It("should have unmatching certificates replaced", func() {
 		namespace := f.Namespace()
 
-		// ACME server will likely cache the validation for our domain and won't retry it so soon.
-		err := DeleteACMEAccountIfRequested(f, true)
-
 		g.By("creating new Route with unmatching certificate")
-		domain := "test.local"
-		o.Expect(domain).NotTo(o.Equal(exutil.GetDomain()))
+		name := names.SimpleNameGenerator.GenerateName("test-")
+		domain := exutil.GenerateDomain(namespace, name)
+		unmathchingDomain := "test.local"
+		o.Expect(unmathchingDomain).NotTo(o.Equal(domain))
 
 		now := time.Now()
 		notBefore := now.Add(-1 * time.Hour)
 		notAfter := now.Add(1 * time.Hour)
-		certData, err := generateCertificate([]string{domain}, notBefore, notAfter)
+		certData, err := generateCertificate([]string{unmathchingDomain}, notBefore, notAfter)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		certificate, err := certData.Certificate()
 		o.Expect(err).NotTo(o.HaveOccurred())
-		o.Expect(certificate.DNSNames[0]).NotTo(o.Equal(exutil.GetDomain()))
+		o.Expect(certificate.DNSNames[0]).NotTo(o.Equal(domain))
 		o.Expect(cert.IsValid(certificate, now)).To(o.BeTrue())
 
 		route := &routev1.Route{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
+				Name: name,
 				Annotations: map[string]string{
-					"kubernetes.io/tls-acme": "true",
+					"kubernetes.io/tls-acme":        "true",
+					"acme.openshift.io/secret-name": "",
 				},
 			},
 			Spec: routev1.RouteSpec{
-				Host: exutil.GetDomain(),
+				Host: domain,
 				To: routev1.RouteTargetReference{
 					Name: "non-existing",
 				},
 				TLS: &routev1.TLSConfig{
 					Termination:                   routev1.TLSTerminationEdge,
 					InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyAllow,
-					Key:         string(certData.Key),
-					Certificate: string(certData.Crt),
+					Key:                           string(certData.Key),
+					Certificate:                   string(certData.Crt),
 				},
 			},
 		}
@@ -459,7 +409,7 @@ var _ = g.Describe("Routes", func() {
 		o.Expect(now.Before(certificate.NotBefore)).To(o.BeFalse())
 		o.Expect(now.After(certificate.NotAfter)).To(o.BeFalse())
 		o.Expect(cert.IsValid(certificate, now)).To(o.BeTrue())
-		o.Expect(certificate.DNSNames[0]).To(o.Equal(exutil.GetDomain()))
+		o.Expect(certificate.DNSNames[0]).To(o.Equal(domain))
 
 		validateSyncedSecret(f, route)
 		validateTemporaryObjectsAreDeleted(f, route)

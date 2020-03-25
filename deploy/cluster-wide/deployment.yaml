@@ -1,0 +1,27 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: openshift-acme
+  labels:
+    app: openshift-acme
+  annotations:
+spec:
+  selector:
+    matchLabels:
+      app: openshift-acme
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: openshift-acme
+    spec:
+      serviceAccountName: openshift-acme
+      containers:
+      - name: openshift-acme
+        image: quay.io/tnozicka/openshift-acme:controller
+        imagePullPolicy: Always
+        args:
+        - --exposer-image=quay.io/tnozicka/openshift-acme:exposer
+        - --loglevel=4

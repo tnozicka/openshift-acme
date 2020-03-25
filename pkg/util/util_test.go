@@ -2,6 +2,8 @@ package util
 
 import (
 	"testing"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestFirstNLines(t *testing.T) {
@@ -77,6 +79,72 @@ func TestMaxNCharacters(t *testing.T) {
 			result := MaxNCharacters(tc.s, tc.n)
 			if result != tc.expected {
 				t.Errorf("expected %q, got %q", tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestIsManaged(t *testing.T) {
+	tt := []struct {
+		name           string
+		obj            metav1.Object
+		expectedResult bool
+	}{
+		{
+			name: "not managed object",
+			obj: &metav1.ObjectMeta{
+				Annotations: nil,
+			},
+			expectedResult: false,
+		},
+		{
+			name: "managed object",
+			obj: &metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"kubernetes.io/tls-acme": "true",
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "explicitly  not managed object",
+			obj: &metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"kubernetes.io/tls-acme": "false",
+				},
+			},
+			expectedResult: false,
+		},
+		{
+			name: "managed but temporary object",
+			obj: &metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"kubernetes.io/tls-acme": "true",
+				},
+				Labels: map[string]string{
+					"acme.openshift.io/temporary": "true",
+				},
+			},
+			expectedResult: false,
+		},
+		{
+			name: "managed and explicitly not temporary object",
+			obj: &metav1.ObjectMeta{
+				Annotations: map[string]string{
+					"kubernetes.io/tls-acme": "true",
+				},
+				Labels: map[string]string{
+					"acme.openshift.io/temporary": "false",
+				},
+			},
+			expectedResult: true,
+		},
+	}
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			got := IsManaged(tc.obj, "kubernetes.io/tls-acme")
+			if got != tc.expectedResult {
+				t.Errorf("expected %t, got %t", tc.expectedResult, got)
 			}
 		})
 	}

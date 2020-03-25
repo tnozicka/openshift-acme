@@ -1,6 +1,8 @@
 package framework
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"strings"
@@ -128,12 +130,23 @@ func (f *Framework) ChangeUser(username string, namespace string) {
 	})
 	o.Expect(err).NotTo(o.HaveOccurred())
 
+	_, err = f.OAuthClientset().OauthV1().OAuthClients().Create(&oauthv1.OAuthClient{
+		ObjectMeta:  metav1.ObjectMeta{Name: username},
+		GrantMethod: oauthv1.GrantHandlerAuto,
+	})
+	o.Expect(err).NotTo(o.HaveOccurred())
+
+	randomToken := make([]byte, 32)
+	_, err = rand.Read(randomToken)
+	o.Expect(err).NotTo(o.HaveOccurred())
+	accessToken := base64.RawURLEncoding.EncodeToString(randomToken)
 	token, err := f.OAuthClientset().OauthV1().OAuthAccessTokens().Create(&oauthv1.OAuthAccessToken{
-		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("%s-padding_padding_padding_padding_padding_padding_padding", username)},
-		UserName:   user.Name,
-		UserUID:    string(user.UID),
-		ClientName: "openshift-challenging-client",
-		ExpiresIn:  90000,
+		ObjectMeta:  metav1.ObjectMeta{Name: accessToken},
+		ClientName:  username,
+		UserName:    username,
+		UserUID:     string(user.UID),
+		Scopes:      []string{"user:full"},
+		RedirectURI: "https://localhost:8443/oauth/token/implicit",
 	})
 	o.Expect(err).NotTo(o.HaveOccurred())
 
