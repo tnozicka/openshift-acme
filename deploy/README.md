@@ -7,7 +7,7 @@ Let's encrypt provides two environments: **live** and **staging**. The environme
 *Staging* is meant for testing the controller or making sure you can try it out without the fear or exhausting your rate limits while trying it out and it will provide you with certificates signed by Let's Encrypt staging CA, making the certs **not trusted**!
 
 ### Live
-*Live* will provide you with trusted certificates signed by Let's Encrypt CA but has lower rate limits. This is what you want when you're done testing/evaluating the controller
+*Live* will provide you with trusted certificates signed by Let's Encrypt CA but has lower rate limits. This is what you want when you're done testing/evaluating the controller.
 
 ## Deployment types
 
