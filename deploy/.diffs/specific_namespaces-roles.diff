@@ -2,7 +2,7 @@
 < kind: ClusterRole
 ---
 > kind: Role
-46,54d45
+43,51d42
 < 
 < - apiGroups:
 <   - ""
