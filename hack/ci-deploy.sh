@@ -12,23 +12,6 @@ case $1 in
 "specific-namespaces")
     oc create user developer --dry-run -o yaml | oc apply -f -
     oc adm policy add-cluster-role-to-user self-provisioner developer
-    oc apply -f - <<EOF
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: openshift-acme-user-elevated-permissions
-rules:
-- apiGroups:
-  - "route.openshift.io"
-  resources:
-  - routes/custom-host
-  verbs:
-  - create
-  - update
-  - delete
-  - patch
-EOF
-    oc adm policy add-cluster-role-to-user openshift-acme-user-elevated-permissions developer
 
     token=$( openssl rand -hex 32 )
     oc apply -f - <<EOF

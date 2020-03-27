@@ -25,9 +25,6 @@ rules:
   - routes/custom-host
   verbs:
   - create
-  - update
-  - delete
-  - patch
 
 - apiGroups:
   - ""
