@@ -15,6 +15,7 @@ require (
 	github.com/spf13/cobra v0.0.6-0.20191226175542-bf2689566459
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/crypto v0.0.0-20200117160349-530e935923ad
+	gopkg.in/inf.v0 v0.9.1
 	gopkg.in/yaml.v2 v2.2.7 // indirect
 	k8s.io/api v0.17.0
 	k8s.io/apimachinery v0.17.0
