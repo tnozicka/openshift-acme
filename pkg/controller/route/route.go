@@ -18,13 +18,15 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ghodss/yaml"
 	"golang.org/x/crypto/acme"
-	"k8s.io/apimachinery/pkg/api/resource"
+	"gopkg.in/inf.v0"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	kapierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	apierrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -166,6 +168,9 @@ func NewRouteController(
 
 		// We need to watch CM for global and local issuers
 		rc.cachesToSync = append(rc.cachesToSync, informers.Core().V1().ConfigMaps().Informer().HasSynced)
+
+		// We need to watch LimitRanges to respect Min and Max values on exposer pods
+		rc.cachesToSync = append(rc.cachesToSync, informers.Core().V1().LimitRanges().Informer().HasSynced)
 	}
 
 	return rc
@@ -252,7 +257,7 @@ func (rc *RouteController) enqueueOwningRoute(obj metav1.Object) {
 
 	objReadOnly, exists, err := rc.routeInformersForNamespaces.InformersForOrGlobal(obj.GetNamespace()).Route().V1().Routes().Informer().GetIndexer().GetByKey(routeKey)
 	if err != nil {
-		klog.Errorf("Fetching object with key %s from store failed with %w", routeKey, err)
+		klog.Errorf("Fetching object with key %s from store failed with %v", routeKey, err)
 		return
 	}
 	if !exists {
@@ -497,7 +502,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 	objReadOnly, exists, err := rc.routeInformersForNamespaces.InformersForOrGlobal(namespace).Route().V1().Routes().Informer().GetIndexer().GetByKey(key)
 	if err != nil {
-		klog.Errorf("Fetching object with key %s from store failed with %w", key, err)
+		klog.Errorf("Fetching object with key %s from store failed with %v", key, err)
 		return err
 	}
 
@@ -891,6 +896,18 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 						},
 					},
 				}
+
+				limitRanges, err := rc.kubeInformersForNamespaces.InformersForOrGlobal(routeReadOnly.Namespace).Core().V1().LimitRanges().Lister().LimitRanges(routeReadOnly.Namespace).List(labels.Everything())
+				if err != nil {
+					return err
+				}
+
+				err = adjustContainerResourceRequirements(&desiredExposerRS.Spec.Template.Spec.Containers[0].Resources, limitRanges)
+				if err != nil {
+					rc.recorder.Eventf(routeReadOnly, corev1.EventTypeWarning, "ExposerPodResourceRequirementsError", err.Error())
+					return nil
+				}
+
 				exposerRS, err := rc.kubeInformersForNamespaces.InformersForOrGlobal(routeReadOnly.Namespace).Apps().V1().ReplicaSets().Lister().ReplicaSets(routeReadOnly.Namespace).Get(desiredExposerRS.Name)
 				if err != nil {
 					if !kapierrors.IsNotFound(err) {
@@ -1150,7 +1167,7 @@ func (rc *RouteController) syncRouteToSecret(ctx context.Context, key string) er
 
 	routeObjReadOnly, exists, err := rc.routeInformersForNamespaces.InformersForOrGlobal(namespace).Route().V1().Routes().Informer().GetIndexer().GetByKey(key)
 	if err != nil {
-		klog.Errorf("Fetching object with key %s from store failed with %w", key, err)
+		klog.Errorf("Fetching object with key %s from store failed with %v", key, err)
 		return err
 	}
 	if !exists {
@@ -1175,7 +1192,7 @@ func (rc *RouteController) syncRouteToSecret(ctx context.Context, key string) er
 
 	secretObjReadOnly, exists, err := rc.kubeInformersForNamespaces.InformersForOrGlobal(namespace).Core().V1().Secrets().Informer().GetIndexer().GetByKey(key)
 	if err != nil {
-		klog.Errorf("Fetching object with key %s from store failed with %w", key, err)
+		klog.Errorf("Fetching object with key %s from store failed with %v", key, err)
 		return err
 	}
 	var secretReadOnly *corev1.Secret
@@ -1383,4 +1400,82 @@ func GetSyncSecretName(route *routev1.Route) (string, bool) {
 	}
 
 	return secretName, true
+}
+
+func adjustContainerResourceRequirements(requirements *corev1.ResourceRequirements, limitRanges []*corev1.LimitRange) error {
+	var errors []error
+
+	for _, limitRange := range limitRanges {
+		for _, limitRangeItem := range limitRange.Spec.Limits {
+			if limitRangeItem.Type != corev1.LimitTypeContainer && limitRangeItem.Type != corev1.LimitTypePod {
+				continue
+			}
+
+			memoryRangeMin, memoryRangeMinPresent := limitRangeItem.Min[corev1.ResourceMemory]
+			memoryRangeMax, memoryRangeMaxPresent := limitRangeItem.Max[corev1.ResourceMemory]
+
+			for _, r := range []corev1.ResourceList{requirements.Requests, requirements.Limits} {
+				memory, memoryPresent := r[corev1.ResourceMemory]
+				if memoryPresent {
+					if memoryRangeMinPresent {
+						if memory.Cmp(memoryRangeMin) == -1 { // less
+							r[corev1.ResourceMemory] = memoryRangeMin
+						}
+					}
+
+					if memoryRangeMaxPresent {
+						if memory.Cmp(memoryRangeMax) == 1 { // more
+							errors = append(errors, fmt.Errorf("memory ask for %s is higher then maximum memory from limitrange %s/%s", memory.String(), limitRange.Namespace, limitRange.Name))
+						}
+					}
+				}
+			}
+
+			memoryRangeRequestRatio, memoryRangeRequestRatioPresent := limitRangeItem.MaxLimitRequestRatio[corev1.ResourceMemory]
+			memoryRequest, memoryRequestPresent := requirements.Requests[corev1.ResourceMemory]
+			memoryLimit, memoryLimitPresent := requirements.Limits[corev1.ResourceMemory]
+			if memoryRangeRequestRatioPresent && memoryRequestPresent && memoryLimitPresent {
+				observerRatio := new(inf.Dec).QuoRound(memoryLimit.AsDec(), memoryRequest.AsDec(), 3, inf.RoundHalfDown)
+				if observerRatio.Cmp(memoryRangeRequestRatio.AsDec()) == 1 { // more
+					res := new(inf.Dec).QuoRound(memoryLimit.AsDec(), memoryRangeRequestRatio.AsDec(), 3, inf.RoundHalfDown)
+					unscaled, _ := res.Unscaled()
+					requirements.Requests[corev1.ResourceMemory] = *resource.NewScaledQuantity(unscaled, resource.Scale(res.Scale()*-1))
+				}
+			}
+
+			cpuRangeMin, cpuRangeMinPresent := limitRangeItem.Min[corev1.ResourceCPU]
+			cpuRangeMax, cpuRangeMaxPresent := limitRangeItem.Max[corev1.ResourceCPU]
+
+			for _, r := range []corev1.ResourceList{requirements.Requests, requirements.Limits} {
+				cpu, cpuPresent := r[corev1.ResourceCPU]
+				if cpuPresent {
+					if cpuRangeMinPresent {
+						if cpu.Cmp(cpuRangeMin) == -1 { // less
+							r[corev1.ResourceCPU] = cpuRangeMin
+						}
+					}
+
+					if cpuRangeMaxPresent {
+						if cpu.Cmp(cpuRangeMax) == 1 { // more
+							errors = append(errors, fmt.Errorf("cpu ask for %s is higher then maximum cpu from limitrange %s/%s", cpu.String(), limitRange.Namespace, limitRange.Name))
+						}
+					}
+				}
+			}
+
+			cpuRangeRequestRatio, cpuRangeRequestRatioPresent := limitRangeItem.MaxLimitRequestRatio[corev1.ResourceCPU]
+			cpuRequest, cpuRequestPresent := requirements.Requests[corev1.ResourceCPU]
+			cpuLimit, cpuLimitPresent := requirements.Limits[corev1.ResourceCPU]
+			if cpuRangeRequestRatioPresent && cpuRequestPresent && cpuLimitPresent {
+				observerRatio := new(inf.Dec).QuoRound(cpuLimit.AsDec(), cpuRequest.AsDec(), 3, inf.RoundHalfDown)
+				if observerRatio.Cmp(cpuRangeRequestRatio.AsDec()) == 1 { // more
+					res := new(inf.Dec).QuoRound(cpuLimit.AsDec(), cpuRangeRequestRatio.AsDec(), 3, inf.RoundHalfDown)
+					unscaled, _ := res.Unscaled()
+					requirements.Requests[corev1.ResourceCPU] = *resource.NewScaledQuantity(unscaled, resource.Scale(res.Scale()*-1))
+				}
+			}
+		}
+	}
+
+	return apierrors.NewAggregate(errors)
 }

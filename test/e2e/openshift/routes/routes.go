@@ -9,6 +9,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -103,6 +104,25 @@ var _ = g.Describe("Routes", func() {
 	g.It("should be provisioned with certificates", func() {
 		namespace := f.Namespace()
 
+		// Create a limit range so we know creating Pods work in such environment
+		_, err := f.KubeAdminClientSet().CoreV1().LimitRanges(namespace).Create(&corev1.LimitRange{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "default",
+			},
+			Spec: corev1.LimitRangeSpec{
+				Limits: []corev1.LimitRangeItem{
+					{
+						Type: corev1.LimitTypePod,
+						Min: corev1.ResourceList{
+							corev1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),       // higher then our regular ask
+							corev1.ResourceMemory: *resource.NewQuantity(100*(1024*1024), resource.BinarySI), // higher then our regular ask
+						},
+					},
+				},
+			},
+		})
+		o.Expect(err).NotTo(o.HaveOccurred())
+
 		g.By("creating new Route without TLS")
 		name := names.SimpleNameGenerator.GenerateName("test-")
 		route := &routev1.Route{
@@ -120,7 +140,7 @@ var _ = g.Describe("Routes", func() {
 				},
 			},
 		}
-		route, err := f.RouteClientset().RouteV1().Routes(namespace).Create(route)
+		route, err = f.RouteClientset().RouteV1().Routes(namespace).Create(route)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
 		g.By("waiting for Route to be admitted by the router")
