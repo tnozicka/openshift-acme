@@ -414,4 +414,77 @@ var _ = g.Describe("Routes", func() {
 		validateSyncedSecret(f, route)
 		validateTemporaryObjectsAreDeleted(f, route)
 	})
+
+	g.It("should provision certificates for passthrough Routes", func() {
+		namespace := f.Namespace()
+
+		g.By("creating new passtrough Route")
+		name := names.SimpleNameGenerator.GenerateName("test-")
+		route := &routev1.Route{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				Annotations: map[string]string{
+					"kubernetes.io/tls-acme":        "true",
+					"acme.openshift.io/secret-name": "",
+				},
+			},
+			Spec: routev1.RouteSpec{
+				Host: exutil.GenerateDomain(namespace, name),
+				To: routev1.RouteTargetReference{
+					Name: "non-existing",
+				},
+				TLS: &routev1.TLSConfig{
+					Termination:                   routev1.TLSTerminationPassthrough,
+					InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+				},
+			},
+		}
+		route, err := f.RouteClientset().RouteV1().Routes(namespace).Create(route)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("waiting for Route to be admitted by the router")
+		{
+			ctx, cancel := watchtools.ContextWithOptionalTimeout(context.Background(), RouteAdmissionTimeout)
+			defer cancel()
+			event, err := WaitForRouteCondition(
+				ctx,
+				f.RouteClientset().RouteV1().Routes(namespace),
+				route.Namespace,
+				route.Name,
+				util.RouteAdmittedFunc,
+			)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for Route to be admitted by the router!")
+
+			route = event.Object.(*routev1.Route)
+		}
+
+		g.By("waiting for initial certificate to be provisioned")
+		{
+			ctx, cancel := watchtools.ContextWithOptionalTimeout(context.Background(), CertificateProvisioningTimeout)
+			defer cancel()
+			event, err := WaitForRouteCondition(
+				ctx,
+				f.RouteClientset().RouteV1().Routes(namespace),
+				route.Namespace,
+				route.Name,
+				util.RouteTLSChangedFunc(route.Spec.TLS),
+			)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to wait for certificate to be provisioned!")
+
+			route = event.Object.(*routev1.Route)
+		}
+		o.Expect(route.Spec.TLS.Certificate).NotTo(o.BeNil())
+		o.Expect(route.Spec.TLS.Key).NotTo(o.BeNil())
+
+		crt, err := util.CertificateFromPEM([]byte(route.Spec.TLS.Certificate))
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		now := time.Now()
+		o.Expect(now.Before(crt.NotBefore)).To(o.BeFalse())
+		o.Expect(now.After(crt.NotAfter)).To(o.BeFalse())
+		o.Expect(cert.IsValid(crt, now)).To(o.BeTrue())
+
+		validateSyncedSecret(f, route)
+		validateTemporaryObjectsAreDeleted(f, route)
+	})
 })
