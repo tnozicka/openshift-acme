@@ -1,4 +1,9 @@
 7d6
 <   annotations:
-27a27
->         - --namespace=acme-controller
+27a27,32
+>         - --namespace=$(CURRENT_NAMESPACE)
+>         env:
+>         - name: CURRENT_NAMESPACE
+>           valueFrom:
+>             fieldRef:
+>               fieldPath: metadata.namespace
