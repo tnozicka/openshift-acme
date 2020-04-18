@@ -24,4 +24,9 @@ spec:
         args:
         - --exposer-image=quay.io/tnozicka/openshift-acme:exposer
         - --loglevel=4
-        - --namespace=acme-controller
+        - --namespace=$(CURRENT_NAMESPACE)
+        env:
+        - name: CURRENT_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
