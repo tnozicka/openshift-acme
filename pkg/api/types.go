@@ -7,14 +7,16 @@ import (
 const (
 	DefaultTlsAcmeAnnotation = "kubernetes.io/tls-acme"
 
-	AcmeStatusAnnotation   = "acme.openshift.io/status"
-	AcmePriorityAnnotation = "acme.openshift.io/priority"
-	AcmeTemporaryLabel     = "acme.openshift.io/temporary"
-	AcmeExposerId          = "acme.openshift.io/exposer-id"
-	AcmeExposerKey         = "acme.openshift.io/exposer-key"
-	AcmeExposerUID         = "acme.openshift.io/exposer-uid"
-	AcmeCertIssuerName     = "acme.openshift.io/cert-issuer-name"
-	AcmeSecretName         = "acme.openshift.io/secret-name"
+	AcmeStatusAnnotation                          = "acme.openshift.io/status"
+	AcmePriorityAnnotation                        = "acme.openshift.io/priority"
+	AcmeExposerHttpFilterOutAnnotationsAnnotation = "http.exposer.acme.openshift.io/filter-out-annotations"
+	AcmeExposerHttpFilterOutLabelsAnnotation      = "http.exposer.acme.openshift.io/filter-out-labels"
+	AcmeTemporaryLabel                            = "acme.openshift.io/temporary"
+	AcmeExposerId                                 = "acme.openshift.io/exposer-id"
+	AcmeExposerKey                                = "acme.openshift.io/exposer-key"
+	AcmeExposerUID                                = "acme.openshift.io/exposer-uid"
+	AcmeCertIssuerName                            = "acme.openshift.io/cert-issuer-name"
+	AcmeSecretName                                = "acme.openshift.io/secret-name"
 )
 
 type CertIssuerType string

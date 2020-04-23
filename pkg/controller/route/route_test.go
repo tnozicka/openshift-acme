@@ -285,3 +285,91 @@ func TestAdjustContainerResourceRequirements(t *testing.T) {
 		})
 	}
 }
+
+func TestFilterOutAnnotations(t *testing.T) {
+	tt := []struct {
+		name                string
+		annotations         map[string]string
+		expectedAnnotations map[string]string
+	}{
+		{
+			name:                "nil annotations",
+			annotations:         nil,
+			expectedAnnotations: nil,
+		},
+		{
+			name: "filters correctly",
+			annotations: map[string]string{
+				"http.exposer.acme.openshift.io/filter-out-annotations": "^matc[h]ing$",
+				"foo": "bar",
+				"haproxy.router.openshift.io/ip_whitelist": "10.0.0.0/16",
+				"matching": "42",
+			},
+			expectedAnnotations: map[string]string{
+				"http.exposer.acme.openshift.io/filter-out-annotations": "^matc[h]ing$",
+				"foo": "bar",
+			},
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			filterOutAnnotations(tc.annotations)
+
+			if !apiequality.Semantic.DeepEqual(tc.annotations, tc.expectedAnnotations) {
+				t.Errorf("expected annotations differ: %s", cmp.Diff(tc.expectedAnnotations, tc.annotations))
+			}
+		})
+	}
+}
+
+func TestFilterOutLabels(t *testing.T) {
+	tt := []struct {
+		name           string
+		labels         map[string]string
+		annotations    map[string]string
+		expectedLabels map[string]string
+	}{
+		{
+			name:           "nil annotations",
+			labels:         nil,
+			annotations:    nil,
+			expectedLabels: nil,
+		},
+		{
+			name: "filters correctly",
+			annotations: map[string]string{
+				"http.exposer.acme.openshift.io/filter-out-labels": "^matc[h]ing$",
+			},
+			labels: map[string]string{
+				"foo":      "bar",
+				"matching": "42",
+			},
+			expectedLabels: map[string]string{
+				"foo": "bar",
+			},
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			var annotationsCopy map[string]string
+			if tc.annotations != nil {
+				annotationsCopy = map[string]string{}
+				for k, v := range tc.annotations {
+					annotationsCopy[k] = v
+				}
+			}
+
+			filterOutLabels(tc.labels, tc.annotations)
+
+			if !reflect.DeepEqual(tc.annotations, annotationsCopy) {
+				t.Errorf("annotations were changed: %s", cmp.Diff(annotationsCopy, tc.annotations))
+			}
+
+			if !apiequality.Semantic.DeepEqual(tc.labels, tc.expectedLabels) {
+				t.Errorf("expected labels differ: %s", cmp.Diff(tc.expectedLabels, tc.labels))
+			}
+		})
+	}
+}
