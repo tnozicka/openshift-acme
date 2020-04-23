@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net/http"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -701,6 +702,9 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 				 */
 				trueVal := true
 				desiredExposerRoute := routeReadOnly.DeepCopy()
+				filterOutAnnotations(desiredExposerRoute.Annotations)
+				filterOutLabels(desiredExposerRoute.Labels, desiredExposerRoute.Annotations)
+
 				desiredExposerRoute.Name = tmpName
 				desiredExposerRoute.ResourceVersion = ""
 				desiredExposerRoute.OwnerReferences = []metav1.OwnerReference{
@@ -1478,4 +1482,53 @@ func adjustContainerResourceRequirements(requirements *corev1.ResourceRequiremen
 	}
 
 	return apierrors.NewAggregate(errors)
+}
+
+func filterOutAnnotations(annotations map[string]string) {
+	if annotations == nil {
+		return
+	}
+
+	// don't copy haproxy.router.openshift.io/ip_whitelist so http-01 validation works
+	delete(annotations, "haproxy.router.openshift.io/ip_whitelist")
+
+	regexString, ok := annotations[api.AcmeExposerHttpFilterOutAnnotationsAnnotation]
+	if !ok || len(regexString) == 0 {
+		return
+	}
+
+	r, err := regexp.Compile(regexString)
+	if err != nil {
+		klog.V(2).Infof("invalid regex: %q", regexString)
+		return
+	}
+
+	for k := range annotations {
+		if r.MatchString(k) {
+			delete(annotations, k)
+		}
+	}
+}
+
+func filterOutLabels(labels map[string]string, annotations map[string]string) {
+	if labels == nil {
+		return
+	}
+
+	regexString, ok := annotations[api.AcmeExposerHttpFilterOutLabelsAnnotation]
+	if !ok || len(regexString) == 0 {
+		return
+	}
+
+	r, err := regexp.Compile(regexString)
+	if err != nil {
+		klog.V(2).Infof("invalid regex: %q", regexString)
+		return
+	}
+
+	for k := range labels {
+		if r.MatchString(k) {
+			delete(labels, k)
+		}
+	}
 }
