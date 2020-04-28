@@ -41,8 +41,6 @@ oc new-project "${PROJECT}" || oc project "${PROJECT}" 2>/dev/null
 
 deploy_file=$( mktemp )
 
-CONTROLLER_IMAGE=${CONTROLLER_IMAGE:-${IMAGE_FORMAT//\/stable:\$\{component\}//pipeline:openshift-acme-controller}}
-EXPOSER_IMAGE=${EXPOSER_IMAGE:-${IMAGE_FORMAT//\/stable:\$\{component\}//pipeline:openshift-acme-exposer}}
 cat deploy/$1/deployment.yaml | \
     sed -e "s~quay.io/tnozicka/openshift-acme:controller~${CONTROLLER_IMAGE}~" | \
     sed -e "s~quay.io/tnozicka/openshift-acme:exposer~${EXPOSER_IMAGE}~" | \
