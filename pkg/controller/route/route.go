@@ -719,10 +719,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 				desiredExposerRoute.Labels[api.AcmeExposerUID] = string(routeReadOnly.UID)
 				desiredExposerRoute.Spec.Path = acmeClient.HTTP01ChallengePath(challenge.Token)
 				desiredExposerRoute.Spec.Port = nil
-				desiredExposerRoute.Spec.TLS = &routev1.TLSConfig{
-					Termination:                   "edge",
-					InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyAllow,
-				}
+				desiredExposerRoute.Spec.TLS = nil
 				desiredExposerRoute.Spec.To = routev1.RouteTargetReference{
 					Kind: "Service",
 					Name: tmpName,
