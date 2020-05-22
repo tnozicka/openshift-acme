@@ -682,6 +682,12 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 			switch challenge.Status {
 			case acme.StatusPending:
+				if routeReadOnly.Spec.TLS != nil {
+					klog.V(2).Infof("Exposing route %s/%s (termination: %s, insecureEdgeTerminationPolicy: %s)", routeReadOnly.Namespace, routeReadOnly.Name, routeReadOnly.Spec.TLS.Termination, routeReadOnly.Spec.TLS.InsecureEdgeTerminationPolicy)
+				} else {
+					klog.V(2).Infof("Exposing route %s/%s, no existing TLS setting", routeReadOnly.Namespace, routeReadOnly.Name)
+				}
+
 				id := getID(routeReadOnly.Name, order.URI, authzURL, challenge.URI)
 				tmpName := getTemporaryName(id)
 
@@ -720,6 +726,10 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 				desiredExposerRoute.Spec.Path = acmeClient.HTTP01ChallengePath(challenge.Token)
 				desiredExposerRoute.Spec.Port = nil
 				desiredExposerRoute.Spec.TLS = nil
+				// desiredExposerRoute.Spec.TLS = &routev1.TLSConfig{
+				// 	Termination:                   "edge",
+				// 	InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyAllow,
+				// }
 				desiredExposerRoute.Spec.To = routev1.RouteTargetReference{
 					Kind: "Service",
 					Name: tmpName,
@@ -796,7 +806,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 				}
 
 				if !metav1.IsControlledBy(exposerSecret, exposerRoute) {
-					return fmt.Errorf("secret %s/%s already exists and isn't owned by expúoser route %s/%s", exposerSecret.Namespace, exposerSecret.Name, exposerRoute.Namespace, exposerRoute.Name)
+					return fmt.Errorf("secret %s/%s already exists and isn't owned by exposer route %s/%s", exposerSecret.Namespace, exposerSecret.Name, exposerRoute.Namespace, exposerRoute.Name)
 				}
 
 				// Check the id to avoid collisions
@@ -969,10 +979,19 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 					return fmt.Errorf("exposer service %s/%s id missmatch: expected %q, got %q", exposerRoute.Namespace, exposerRoute.Name, id, exposerServiceId)
 				}
 
-				// TODO: id admitted=false we should stop trying and report event
-				if !routeutil.IsAdmitted(exposerRoute) {
-					klog.V(4).Infof("exposer Route %s/%s isn't admitted yet", exposerRoute.Namespace, exposerRoute.Name)
+				admittedCond := routeutil.FindMostRecentIngressAdmittedConditionOrUnknown(exposerRoute)
+				if admittedCond.Status == corev1.ConditionUnknown {
+					klog.V(4).Infof("exposer Route %s/%s admission status is unknown", exposerRoute.Namespace, exposerRoute.Name)
 					rc.queue.AddAfter(key, 15*time.Second) // FIXME: set up event handlers
+					break
+				} else if admittedCond.Status == corev1.ConditionTrue {
+					klog.V(2).Infof("exposer Route %s/%s is admitted", exposerRoute.Namespace, exposerRoute.Name)
+				} else if admittedCond.Status == corev1.ConditionFalse {
+					klog.Warningf("exposer Route %s/%s is rejected: %s: %s", exposerRoute.Namespace, exposerRoute.Name, admittedCond.Reason, admittedCond.Message)
+					rc.queue.AddAfter(key, 15*time.Second) // FIXME: set up event handlers
+					break
+				} else {
+					klog.Warning("Unknown condition type: %q", admittedCond.Status)
 					break
 				}
 
@@ -1104,6 +1123,27 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		// Unfortunately the golang acme lib actively waits in 'CreateOrderCert'
 		// so we can't take the appropriate asynchronous action here.
 		// The logic is included in handling acme.StatusReady
+
+		// In case the update failed when the certificates were issued, we need to create new order
+		klog.Infof("Cert have already been created for this order, clearing.")
+
+		// route := routeReadOnly.DeepCopy()
+
+		// FIXME: move this to the initial phase, probably just missing update
+
+		// status.ProvisioningStatus.OrderURI = ""
+		//
+		// err = setStatus(&route.ObjectMeta, status)
+		// if err != nil {
+		// 	return fmt.Errorf("can't set status: %w", err)
+		// }
+		//
+		// // TODO: consider RetryOnConflict with rechecking the managed annotation
+		// _, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Update(route)
+		// if err != nil {
+		// 	return fmt.Errorf("can't update route %s/%s to clear the order: %v", routeReadOnly.Namespace, route.Name, err)
+		// }
+
 		return nil
 
 	case acme.StatusInvalid:
