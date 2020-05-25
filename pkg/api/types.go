@@ -12,6 +12,7 @@ const (
 	AcmeExposerHttpFilterOutAnnotationsAnnotation = "http.exposer.acme.openshift.io/filter-out-annotations"
 	AcmeExposerHttpFilterOutLabelsAnnotation      = "http.exposer.acme.openshift.io/filter-out-labels"
 	AcmeTemporaryLabel                            = "acme.openshift.io/temporary"
+	AcmeExposerPodLabel                           = "acme.openshift.io/exposer-pod"
 	AcmeExposerId                                 = "acme.openshift.io/exposer-id"
 	AcmeExposerKey                                = "acme.openshift.io/exposer-key"
 	AcmeExposerUID                                = "acme.openshift.io/exposer-uid"

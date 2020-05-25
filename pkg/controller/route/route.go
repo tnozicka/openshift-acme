@@ -824,8 +824,8 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 				 */
 				var replicas int32 = 2
 				podLabels := map[string]string{
-					"app":                  tmpName,
-					api.AcmeTemporaryLabel: "true",
+					"app":                   tmpName,
+					api.AcmeExposerPodLabel: "true",
 				}
 				podSelector := &metav1.LabelSelector{
 					MatchLabels: podLabels,
