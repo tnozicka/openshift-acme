@@ -10,16 +10,14 @@ import (
 	"sync"
 
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/util/errors"
-
-	"k8s.io/klog"
-
-	kvalidationutil "k8s.io/apimachinery/pkg/util/validation"
-
 	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
 	cmdutil "github.com/tnozicka/openshift-acme/pkg/cmd/util"
 	"github.com/tnozicka/openshift-acme/pkg/httpserver"
 	"github.com/tnozicka/openshift-acme/pkg/signals"
+	"github.com/tnozicka/openshift-acme/pkg/version"
+	"k8s.io/apimachinery/pkg/util/errors"
+	kvalidationutil "k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/klog"
 )
 
 type Options struct {
@@ -112,14 +110,15 @@ func (o *Options) Complete() error {
 }
 
 func (o *Options) Run(cmd *cobra.Command, out io.Writer) error {
+	klog.Infof("%s version %s", cmd.Name(), version.Get())
+	klog.Infof("loglevel is set to %q", cmdutil.GetLoglevel())
+
 	stopCh := signals.StopChannel()
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		<-stopCh
 		cancel()
 	}()
-
-	klog.Infof("loglevel is set to %q", cmdutil.GetLoglevel())
 
 	bytes, err := ioutil.ReadFile(o.ResponseFile)
 	if err != nil {

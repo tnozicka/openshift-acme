@@ -10,29 +10,25 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spf13/cobra"
-
-	kvalidation "k8s.io/apimachinery/pkg/api/validation"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/client-go/kubernetes"
-	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/leaderelection"
-	"k8s.io/client-go/tools/leaderelection/resourcelock"
-	"k8s.io/klog"
-
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
-
+	"github.com/spf13/cobra"
 	"github.com/tnozicka/openshift-acme/pkg/api"
 	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
 	cmdutil "github.com/tnozicka/openshift-acme/pkg/cmd/util"
 	acmeissuer "github.com/tnozicka/openshift-acme/pkg/controller/issuer/acme"
 	routecontroller "github.com/tnozicka/openshift-acme/pkg/controller/route"
+	"github.com/tnozicka/openshift-acme/pkg/leaderelection"
 	kubeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/kube"
 	routeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/route"
 	"github.com/tnozicka/openshift-acme/pkg/signals"
+	"github.com/tnozicka/openshift-acme/pkg/version"
+	kvalidation "k8s.io/apimachinery/pkg/api/validation"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/client-go/kubernetes"
+	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog"
 )
 
 type Options struct {
@@ -239,101 +235,33 @@ func (o *Options) Complete() error {
 }
 
 func (o *Options) Run(cmd *cobra.Command, streams genericclioptions.IOStreams) error {
-	var leWg sync.WaitGroup
-	var wg sync.WaitGroup
-	leCtx, leCancel := context.WithCancel(context.Background())
-	defer func() {
-		klog.Info("Waiting for controllers to finish...")
-		wg.Wait()
-
-		// Leader election doesn't end gracefully yet, flush just in case
-		klog.Flush()
-
-		klog.Info("Waiting for leaded election loop to finish...")
-		leCancel()
-		leWg.Wait()
-
-		klog.Flush()
-	}()
+	klog.Infof("%s version %s", cmd.Name(), version.Get())
+	klog.Infof("loglevel is set to %q", cmdutil.GetLoglevel())
 
 	stopCh := signals.StopChannel()
-	ctx, cancel := context.WithCancel(leCtx)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	go func() {
 		<-stopCh
 		cancel()
 	}()
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		return err
-	}
-	// add a uniquifier so that two processes on the same host don't accidentally both become active
-	id := hostname + "_" + string(uuid.NewUUID())
-	klog.V(4).Infof("Leaderelection ID is %q", id)
-
-	// we use the Lease lock type since edits to Leases are less common
-	// and fewer objects in the cluster watch "all Leases".
-	lock := &resourcelock.ConfigMapLock{
-		ConfigMapMeta: metav1.ObjectMeta{
-			Name:      "acme-controller-locks",
-			Namespace: o.ControllerNamespace,
+	return leaderelection.Run(
+		ctx,
+		cmd.Name(),
+		cmd.Name()+"-locks",
+		o.ControllerNamespace,
+		o.kubeClient,
+		o.LeaderelectionLeaseDuration,
+		o.LeaderelectionRenewDeadline,
+		o.LeaderelectionRetryPeriod,
+		func(ctx context.Context) error {
+			return o.run(ctx, cmd, streams)
 		},
-		Client: o.kubeClient.CoreV1(),
-		LockConfig: resourcelock.ResourceLockConfig{
-			Identity: id,
-		},
-	}
+	)
+}
 
-	leChan := make(chan struct{})
-	le, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
-		Lock:            lock,
-		LeaseDuration:   o.LeaderelectionLeaseDuration,
-		RenewDeadline:   o.LeaderelectionRenewDeadline,
-		RetryPeriod:     o.LeaderelectionRetryPeriod,
-		ReleaseOnCancel: true,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(ctx context.Context) {
-				close(leChan)
-			},
-			OnStoppedLeading: func() {
-				select {
-				case <-leCtx.Done():
-					// Graceful termination, control loops are already stopped
-					klog.Info("leaderelection lock released")
-
-					// fail safe
-					time.AfterFunc(3*time.Second, func() {
-						klog.Fatalf("Failed to exit in time after releasing leaderelection lock")
-					})
-
-				default:
-					// Leader election lost
-					klog.Fatalf("leaderelection lost")
-				}
-			},
-		},
-		Name: "openshift-acme",
-	})
-	if err != nil {
-		return fmt.Errorf("leaderelection failed: %v", err)
-	}
-
-	leWg.Add(1)
-	go func() {
-		defer leWg.Done()
-		le.Run(leCtx)
-	}()
-
-	select {
-	case <-leChan:
-		klog.Infof("Acquired leaderelection")
-	case <-stopCh:
-		klog.Info("Interrupted before leaderelection")
-		return nil
-	}
-
-	klog.Infof("loglevel is set to %q", cmdutil.GetLoglevel())
-
+func (o *Options) run(ctx context.Context, cmd *cobra.Command, streams genericclioptions.IOStreams) error {
 	kubeInformersForNamespaces := kubeinformers.NewKubeInformersForNamespaces(o.kubeClient, o.Namespaces)
 	routeInformersForNamespaces := routeinformers.NewRouteInformersForNamespaces(o.routeClient, o.Namespaces)
 
@@ -341,8 +269,11 @@ func (o *Options) Run(cmd *cobra.Command, streams genericclioptions.IOStreams) e
 
 	rc := routecontroller.NewRouteController(o.Annotation, o.CertOrderBackoffInitial, o.CertOrderBackoffMax, o.CertDefaultRSAKeyBitSize, o.ExposerImage, o.ControllerNamespace, o.kubeClient, kubeInformersForNamespaces, o.routeClient, routeInformersForNamespaces)
 
-	kubeInformersForNamespaces.Start(stopCh)
-	routeInformersForNamespaces.Start(stopCh)
+	kubeInformersForNamespaces.Start(ctx.Done())
+	routeInformersForNamespaces.Start(ctx.Done())
+
+	var wg sync.WaitGroup
+	defer wg.Wait()
 
 	wg.Add(1)
 	go func() {

@@ -11,6 +11,7 @@ IMAGE_REGISTRY :=quay.io
 # Include the library makefile
 include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 	golang.mk \
+	targets/openshift/bindata.mk \
 	targets/openshift/deps.mk \
 	targets/openshift/images.mk \
 )
@@ -24,6 +25,16 @@ include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 $(call build-image,openshift-acme-controller,$(IMAGE_REGISTRY)/tnozicka/openshift-acme:controller,./images/openshift-acme-controller/Dockerfile,.)
 $(call build-image,openshift-acme-exposer,$(IMAGE_REGISTRY)/tnozicka/openshift-acme:exposer, ./images/openshift-acme-exposer/Dockerfile,.)
 
+# This will call a macro called "add-bindata" which will generate bindata specific targets based on the parameters:
+# $0 - macro name
+# $1 - target suffix
+# $2 - input dirs
+# $3 - prefix
+# $4 - pkg
+# $5 - output
+# It will generate targets {update,verify}-bindata-$(1) logically grouping them in unsuffixed versions of these targets
+# and also hooked into {update,verify}-generated for broader integration.
+$(call add-bindata,v1.0.0,./bindata/v1.0.0/...,bindata,v100_0_assets,pkg/operator/v100_00_assets/bindata.go)
 
 verify-deploy-files:
 	hack/diff-deploy-files.sh $(shell mktemp -d)
