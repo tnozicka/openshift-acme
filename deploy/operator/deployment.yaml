@@ -1,0 +1,25 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: openshift-acme-operator
+  labels:
+    app: openshift-acme-operator
+spec:
+  selector:
+    matchLabels:
+      app: openshift-acme-operator
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: openshift-acme-operator
+    spec:
+      serviceAccountName: openshift-acme-operator
+      containers:
+      - name: openshift-acme-operator
+        image: quay.io/tnozicka/openshift-acme:operator
+        imagePullPolicy: Always
+        args:
+        - --loglevel=4

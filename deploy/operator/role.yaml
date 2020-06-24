@@ -1,0 +1,49 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openshift-acme-operator
+  labels:
+    app: openshift-acme-operator
+rules:
+- apiGroups:
+  - "rbac.authorization.k8s.io/v1"
+  resources:
+  - clusterroles
+  - clusterrolebindings
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+  - deletecollection
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - secrets
+  - serviceaccounts
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+  - deletecollection
+- apiGroups:
+  - "apps"
+  resources:
+  - deployments
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+  - deletecollection

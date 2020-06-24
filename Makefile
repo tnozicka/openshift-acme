@@ -34,7 +34,7 @@ $(call build-image,openshift-acme-exposer,$(IMAGE_REGISTRY)/tnozicka/openshift-a
 # $5 - output
 # It will generate targets {update,verify}-bindata-$(1) logically grouping them in unsuffixed versions of these targets
 # and also hooked into {update,verify}-generated for broader integration.
-$(call add-bindata,v1.0.0,./bindata/v1.0.0/...,bindata,v100_0_assets,pkg/operator/v100_00_assets/bindata.go)
+$(call add-bindata,v1.0.0,./bindata/v1.0.0/...,bindata,v100_0_assets,pkg/controller/operator/v100_00_assets/bindata.go)
 
 verify-deploy-files:
 	hack/diff-deploy-files.sh $(shell mktemp -d)

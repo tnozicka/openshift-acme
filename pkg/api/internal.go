@@ -8,6 +8,7 @@ const (
 	ForwardingRouteSuffix = "acme"
 	ExposerLabelName      = "acme.openshift.io/exposer"
 	ExposerForLabelName   = "acme.openshift.io/exposer-for"
+	ManagedAtGeneration   = "acme.openshift.io/managed-at-generation"
 )
 
 type AcmeState string

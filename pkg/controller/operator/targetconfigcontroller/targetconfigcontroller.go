@@ -3,11 +3,18 @@ package targetconfigcontroller
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/tnozicka/openshift-acme/pkg/api"
+	v100_0_assets "github.com/tnozicka/openshift-acme/pkg/controller/operator/v100_00_assets"
 	kubeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/kube"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -70,11 +77,59 @@ func (c *TargetConfigController) eventHandler() cache.ResourceEventHandler {
 	}
 }
 
+func (c *TargetConfigController) manageDeployment(ctx context.Context) error {
+	deployment := DecodeAssetOrDie("v1.0.0/deployment.yaml").(*appsv1.Deployment)
+	if deployment.Annotations == nil {
+		deployment.Annotations = map[string]string{}
+	}
+	deployment.Annotations[api.ManagedAtGeneration] = "1"
+
+	// TODO: substitute images, args, ...
+
+	deplyomentLister := c.kubeInformersForNamespaces.InformersFor(c.targetNamespace).Apps().V1().Deployments().Lister()
+	existingDeployment, err := deplyomentLister.Deployments(c.targetNamespace).Get(deployment.Name)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+
+		_, err := c.kubeClient.AppsV1().Deployments(c.targetNamespace).Create(ctx, deployment, metav1.CreateOptions{})
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	managedAtGeneration, ok := existingDeployment.Annotations[api.ManagedAtGeneration]
+	generationString := fmt.Sprint(existingDeployment.Generation)
+	if ok && generationString == managedAtGeneration {
+		return nil
+	}
+
+	// This may require 2 updates to stabilize but we can't be sure if we are changing the PodSpec
+	existingDeployment.Annotations[api.ManagedAtGeneration] = generationString
+
+	_, err = c.kubeClient.AppsV1().Deployments(c.targetNamespace).Update(ctx, deployment, metav1.UpdateOptions{})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (c *TargetConfigController) sync(ctx context.Context) error {
 	klog.V(4).Infof("Started syncing %s", ControllerName)
 	defer func() {
 		klog.V(4).Infof("Finished syncing %s", ControllerName)
 	}()
+
+	var errors []error
+
+	err := c.manageDeployment(ctx)
+	if err != nil {
+		errors = append(errors, fmt.Errorf("managing deployment: %v", err))
+	}
 
 	return nil
 }
@@ -130,4 +185,16 @@ func (c *TargetConfigController) Run(ctx context.Context) {
 	}()
 
 	<-ctx.Done()
+}
+
+func DecodeAssetOrDie(path string) runtime.Object {
+	obj, err := runtime.Decode(
+		scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion),
+		v100_0_assets.MustAsset(path),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	return obj
 }

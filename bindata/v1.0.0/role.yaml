@@ -1,0 +1,64 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openshift-acme
+  labels:
+    app: openshift-acme
+rules:
+- apiGroups:
+  - "route.openshift.io"
+  resources:
+  - routes
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+  - deletecollection
+
+- apiGroups:
+  - "route.openshift.io"
+  resources:
+  - routes/custom-host
+  verbs:
+  - create
+
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - services
+  - secrets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+
+- apiGroups:
+  - ""
+  resources:
+  - limitranges
+  verbs:
+  - get
+  - list
+  - watch
+
+- apiGroups:
+  - "apps"
+  resources:
+  - replicasets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
