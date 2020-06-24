@@ -1049,7 +1049,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 	case acme.StatusProcessing:
 		// TODO: backoff but capped at some reasonable time
-		rc.queue.AddAfter(routeReadOnly, 15*time.Second)
+		rc.queue.AddAfter(key, 15*time.Second)
 
 		klog.V(4).Infof("Route %q: Order %q: Waiting to be validated by ACME server", key, order)
 
