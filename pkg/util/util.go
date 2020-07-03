@@ -9,12 +9,11 @@ import (
 	"strings"
 
 	routev1 "github.com/openshift/api/route/v1"
+	"github.com/tnozicka/openshift-acme/pkg/api"
+	routeutil "github.com/tnozicka/openshift-acme/pkg/route"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
-
-	"github.com/tnozicka/openshift-acme/pkg/api"
-	routeutil "github.com/tnozicka/openshift-acme/pkg/route"
 )
 
 func IsTemporary(obj metav1.Object) bool {

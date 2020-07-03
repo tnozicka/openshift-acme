@@ -68,7 +68,7 @@ func validateTemporaryObjectsAreDeleted(f *framework.Framework, route *routev1.R
 
 	tmpRoutes, err := f.RouteClientset().RouteV1().Routes(route.Namespace).List(metav1.ListOptions{
 		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
-			api.ExposerForLabelName: string(route.UID),
+			apis.ExposerForLabelName: string(route.UID),
 		}).String(),
 	})
 	o.Expect(err).NotTo(o.HaveOccurred())
@@ -78,7 +78,7 @@ func validateTemporaryObjectsAreDeleted(f *framework.Framework, route *routev1.R
 
 	tmpServices, err := f.KubeClientSet().CoreV1().Services(route.Namespace).List(metav1.ListOptions{
 		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
-			api.ExposerForLabelName: string(route.UID),
+			apis.ExposerForLabelName: string(route.UID),
 		}).String(),
 	})
 	o.Expect(err).NotTo(o.HaveOccurred())
@@ -88,7 +88,7 @@ func validateTemporaryObjectsAreDeleted(f *framework.Framework, route *routev1.R
 
 	tmpReplicaSets, err := f.KubeClientSet().AppsV1().ReplicaSets(route.Namespace).List(metav1.ListOptions{
 		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
-			api.ExposerForLabelName: string(route.UID),
+			apis.ExposerForLabelName: string(route.UID),
 		}).String(),
 	})
 	o.Expect(err).NotTo(o.HaveOccurred())

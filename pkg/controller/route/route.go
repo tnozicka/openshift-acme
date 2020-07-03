@@ -18,9 +18,19 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ghodss/yaml"
+	routev1 "github.com/openshift/api/route/v1"
+	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
+	_ "github.com/openshift/client-go/route/clientset/versioned/scheme"
+	"github.com/tnozicka/openshift-acme/pkg/api"
+	"github.com/tnozicka/openshift-acme/pkg/cert"
+	"github.com/tnozicka/openshift-acme/pkg/controllerutils"
+	"github.com/tnozicka/openshift-acme/pkg/helpers"
+	kubeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/kube"
+	routeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/route"
+	routeutil "github.com/tnozicka/openshift-acme/pkg/route"
+	"github.com/tnozicka/openshift-acme/pkg/util"
 	"golang.org/x/crypto/acme"
 	"gopkg.in/inf.v0"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	kapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -39,19 +49,6 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog"
-
-	routev1 "github.com/openshift/api/route/v1"
-	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
-	_ "github.com/openshift/client-go/route/clientset/versioned/scheme"
-
-	"github.com/tnozicka/openshift-acme/pkg/api"
-	"github.com/tnozicka/openshift-acme/pkg/cert"
-	"github.com/tnozicka/openshift-acme/pkg/controllerutils"
-	"github.com/tnozicka/openshift-acme/pkg/helpers"
-	kubeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/kube"
-	routeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/route"
-	routeutil "github.com/tnozicka/openshift-acme/pkg/route"
-	"github.com/tnozicka/openshift-acme/pkg/util"
 )
 
 const (

@@ -1,0 +1,62 @@
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  creationTimestamp: null
+  name: acmecontroller.operator.openshift.io
+spec:
+  group: operator.openshift.io
+  names:
+    kind: ACMEController
+    plural: acmecontrollers
+    singular: acmecontroller
+  scope: Cluster
+  version: v1
+  versions:
+  - name: v1
+    served: true
+    storage: true
+  validation:
+    openAPIV3Schema:
+      description: ACMEController provides information to configure an operator to
+        manage openshift-acme controller.
+      type: object
+      required:
+      - spec
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          description: spec is the specification of the desired behavior of the openshift-acme
+            controller
+          type: object
+        status:
+          description: status is the most recently observed status of the openshift-acme
+            controller
+          type: object
+          properties:
+            availableReplicas:
+              description: availableReplicas indicates how many replicas are available
+                and at the desired state
+              type: integer
+              format: int32
+            observedGeneration:
+              description: observedGeneration is the last generation change you've
+                dealt with
+              type: integer
+              format: int64
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

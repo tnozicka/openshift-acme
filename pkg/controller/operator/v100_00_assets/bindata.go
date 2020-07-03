@@ -2,6 +2,7 @@
 // sources:
 // bindata/v1.0.0/clusterrole.yaml
 // bindata/v1.0.0/deployment.yaml
+// bindata/v1.0.0/role.yaml
 // bindata/v1.0.0/serviceaccount.yaml
 package v100_0_assets
 
@@ -152,7 +153,6 @@ metadata:
   name: openshift-acme
   labels:
     app: openshift-acme
-  annotations:
 spec:
   selector:
     matchLabels:
@@ -186,6 +186,87 @@ func v100DeploymentYaml() (*asset, error) {
 	}
 
 	info := bindataFileInfo{name: "v1.0.0/deployment.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
+	a := &asset{bytes: bytes, info: info}
+	return a, nil
+}
+
+var _v100RoleYaml = []byte(`apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openshift-acme
+  labels:
+    app: openshift-acme
+rules:
+- apiGroups:
+  - "route.openshift.io"
+  resources:
+  - routes
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+  - deletecollection
+
+- apiGroups:
+  - "route.openshift.io"
+  resources:
+  - routes/custom-host
+  verbs:
+  - create
+
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - services
+  - secrets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+
+- apiGroups:
+  - ""
+  resources:
+  - limitranges
+  verbs:
+  - get
+  - list
+  - watch
+
+- apiGroups:
+  - "apps"
+  resources:
+  - replicasets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+`)
+
+func v100RoleYamlBytes() ([]byte, error) {
+	return _v100RoleYaml, nil
+}
+
+func v100RoleYaml() (*asset, error) {
+	bytes, err := v100RoleYamlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "v1.0.0/role.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -267,6 +348,7 @@ func AssetNames() []string {
 var _bindata = map[string]func() (*asset, error){
 	"v1.0.0/clusterrole.yaml":    v100ClusterroleYaml,
 	"v1.0.0/deployment.yaml":     v100DeploymentYaml,
+	"v1.0.0/role.yaml":           v100RoleYaml,
 	"v1.0.0/serviceaccount.yaml": v100ServiceaccountYaml,
 }
 
@@ -314,6 +396,7 @@ var _bintree = &bintree{nil, map[string]*bintree{
 	"v1.0.0": {nil, map[string]*bintree{
 		"clusterrole.yaml":    {v100ClusterroleYaml, map[string]*bintree{}},
 		"deployment.yaml":     {v100DeploymentYaml, map[string]*bintree{}},
+		"role.yaml":           {v100RoleYaml, map[string]*bintree{}},
 		"serviceaccount.yaml": {v100ServiceaccountYaml, map[string]*bintree{}},
 	}},
 }}

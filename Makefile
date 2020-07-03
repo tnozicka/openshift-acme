@@ -41,7 +41,7 @@ $(call add-bindata,v1.0.0,./bindata/v1.0.0/...,bindata,v100_0_assets,pkg/control
 # $2 - apis
 # $3 - manifests
 # $4 - output
-$(call add-crd-gen,authorization,./authorization/v1,./authorization/v1,./authorization/v1)
+$(call add-crd-gen,operator,./pkg/api/operator/v1,./pkg/api/operator/v1,./pkg/api/operator/v1)
 
 verify-deploy-files:
 	hack/diff-deploy-files.sh $(shell mktemp -d)
