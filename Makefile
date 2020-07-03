@@ -14,6 +14,7 @@ include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 	targets/openshift/bindata.mk \
 	targets/openshift/deps.mk \
 	targets/openshift/images.mk \
+	targets/openshift/crd-schema-gen.mk \
 )
 
 # This will call a macro called "build-image" which will generate image specific targets based on the parameters:
@@ -35,6 +36,12 @@ $(call build-image,openshift-acme-exposer,$(IMAGE_REGISTRY)/tnozicka/openshift-a
 # It will generate targets {update,verify}-bindata-$(1) logically grouping them in unsuffixed versions of these targets
 # and also hooked into {update,verify}-generated for broader integration.
 $(call add-bindata,v1.0.0,./bindata/v1.0.0/...,bindata,v100_0_assets,pkg/controller/operator/v100_00_assets/bindata.go)
+
+# $1 - target name
+# $2 - apis
+# $3 - manifests
+# $4 - output
+$(call add-crd-gen,authorization,./authorization/v1,./authorization/v1,./authorization/v1)
 
 verify-deploy-files:
 	hack/diff-deploy-files.sh $(shell mktemp -d)

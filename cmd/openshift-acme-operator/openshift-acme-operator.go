@@ -8,14 +8,12 @@ import (
 	"runtime"
 	"time"
 
+	routev1 "github.com/openshift/api/route/v1"
+	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
+	cmd "github.com/tnozicka/openshift-acme/pkg/cmd/openshift-acme-operator"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
-
-	routev1 "github.com/openshift/api/route/v1"
-
-	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
-	cmd "github.com/tnozicka/openshift-acme/pkg/cmd/openshift-acme-operator"
 )
 
 func init() {

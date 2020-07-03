@@ -2,19 +2,21 @@ package targetconfigcontroller
 
 import (
 	"context"
+	"crypto/sha512"
+	"encoding/json"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/tnozicka/openshift-acme/pkg/api"
-	v100_0_assets "github.com/tnozicka/openshift-acme/pkg/controller/operator/v100_00_assets"
+	v100_00_assets "github.com/tnozicka/openshift-acme/pkg/controller/operator/v100_00_assets"
 	kubeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/kube"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	errorutils "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -77,45 +79,46 @@ func (c *TargetConfigController) eventHandler() cache.ResourceEventHandler {
 	}
 }
 
-func (c *TargetConfigController) manageDeployment(ctx context.Context) error {
+func (c *TargetConfigController) manageDeployment(ctx context.Context) (*appsv1.Deployment, error) {
 	deployment := DecodeAssetOrDie("v1.0.0/deployment.yaml").(*appsv1.Deployment)
 	if deployment.Annotations == nil {
 		deployment.Annotations = map[string]string{}
 	}
-	deployment.Annotations[api.ManagedAtGeneration] = "1"
 
 	// TODO: substitute images, args, ...
 
-	deplyomentLister := c.kubeInformersForNamespaces.InformersFor(c.targetNamespace).Apps().V1().Deployments().Lister()
-	existingDeployment, err := deplyomentLister.Deployments(c.targetNamespace).Get(deployment.Name)
+	deployment.Annotations[api.ManagedDataHash] = HashObjectsOrDie(deployment)
+
+	deploymentLister := c.kubeInformersForNamespaces.InformersFor(c.targetNamespace).Apps().V1().Deployments().Lister()
+	existingDeployment, err := deploymentLister.Deployments(c.targetNamespace).Get(deployment.Name)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
-			return err
+			return nil, err
 		}
 
-		_, err := c.kubeClient.AppsV1().Deployments(c.targetNamespace).Create(ctx, deployment, metav1.CreateOptions{})
+		klog.V(2).Infof("Creating deployment %s/%s because it is missing.", c.targetNamespace, deployment.Name)
+		// TODO: add expectations to avoid stale caches (AlreadyExistsError)
+		deployment, err := c.kubeClient.AppsV1().Deployments(c.targetNamespace).Create(ctx, deployment, metav1.CreateOptions{})
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		return nil
+		return deployment, nil
 	}
 
-	managedAtGeneration, ok := existingDeployment.Annotations[api.ManagedAtGeneration]
-	generationString := fmt.Sprint(existingDeployment.Generation)
-	if ok && generationString == managedAtGeneration {
-		return nil
+	existingHash, ok := existingDeployment.Annotations[api.ManagedDataHash]
+	if ok && existingHash == deployment.Annotations[api.ManagedDataHash] {
+		return existingDeployment, nil
 	}
 
-	// This may require 2 updates to stabilize but we can't be sure if we are changing the PodSpec
-	existingDeployment.Annotations[api.ManagedAtGeneration] = generationString
-
-	_, err = c.kubeClient.AppsV1().Deployments(c.targetNamespace).Update(ctx, deployment, metav1.UpdateOptions{})
+	klog.V(2).Infof("Updating deployment %s/%s because it changed.", c.targetNamespace, deployment.Name)
+	deployment.ResourceVersion = existingDeployment.ResourceVersion
+	deployment, err = c.kubeClient.AppsV1().Deployments(c.targetNamespace).Update(ctx, deployment, metav1.UpdateOptions{})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return deployment, nil
 }
 
 func (c *TargetConfigController) sync(ctx context.Context) error {
@@ -126,10 +129,13 @@ func (c *TargetConfigController) sync(ctx context.Context) error {
 
 	var errors []error
 
-	err := c.manageDeployment(ctx)
+	deployment, err := c.manageDeployment(ctx)
 	if err != nil {
 		errors = append(errors, fmt.Errorf("managing deployment: %v", err))
 	}
+
+	manageErr := errorutils.NewAggregate(errors)
+	// Update status
 
 	return nil
 }
@@ -190,11 +196,29 @@ func (c *TargetConfigController) Run(ctx context.Context) {
 func DecodeAssetOrDie(path string) runtime.Object {
 	obj, err := runtime.Decode(
 		scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion),
-		v100_0_assets.MustAsset(path),
+		v100_00_assets.MustAsset(path),
 	)
 	if err != nil {
 		panic(err)
 	}
 
 	return obj
+}
+
+func HashObjectsOrDie(objects ...runtime.Object) string {
+	hasher := sha512.New()
+
+	for _, obj := range objects {
+		data, err := json.Marshal(obj)
+		if err != nil {
+			panic(err)
+		}
+
+		_, err = hasher.Write(data)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	return string(hasher.Sum(nil))
 }

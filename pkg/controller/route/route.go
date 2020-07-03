@@ -455,14 +455,14 @@ func (rc *RouteController) getStatus(routeReadOnly *routev1.Route) (*api.Status,
 	return status, nil
 }
 
-func (rc *RouteController) updateStatus(routeReadOnly *routev1.Route, status *api.Status) error {
+func (rc *RouteController) updateStatus(ctx context.Context, routeReadOnly *routev1.Route, status *api.Status) error {
 	var oldRouteReadOnly *routev1.Route
 	var err error
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if oldRouteReadOnly == nil {
 			oldRouteReadOnly = routeReadOnly
 		} else {
-			oldRouteReadOnly, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Get(routeReadOnly.Name, metav1.GetOptions{})
+			oldRouteReadOnly, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Get(ctx, routeReadOnly.Name, metav1.GetOptions{})
 			if err != nil {
 				return err
 			}
@@ -483,7 +483,7 @@ func (rc *RouteController) updateStatus(routeReadOnly *routev1.Route, status *ap
 		// The controller is the sole owner of the status.
 		// Use Patch so we don't loose ACME information due to conflicts on the object. (e.g. on stale caches)
 
-		_, err = rc.routeClient.RouteV1().Routes(newRoute.Namespace).Update(newRoute)
+		_, err = rc.routeClient.RouteV1().Routes(newRoute.Namespace).Update(ctx, newRoute, metav1.UpdateOptions{})
 		return err
 	})
 	if err != nil {
@@ -557,7 +557,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 	if len(reason) == 0 {
 		klog.V(4).Infof("Route %q doesn't needs new certificate.", key)
-		return rc.updateStatus(routeReadOnly, status)
+		return rc.updateStatus(ctx, routeReadOnly, status)
 	}
 
 	klog.V(2).Infof("Route %q needs new certificate: %v", key, reason)
@@ -574,7 +574,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		if delay > 0 {
 			klog.V(2).Infof("Retrying validation for Route %s got rate limited, next attempt in %v", key, delay)
 			rc.queue.AddAfter(key, delay)
-			return rc.updateStatus(routeReadOnly, status)
+			return rc.updateStatus(ctx, routeReadOnly, status)
 		}
 
 		status.ProvisioningStatus.OrderURI = ""
@@ -626,7 +626,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		status.ProvisioningStatus.StartedAt = time.Now()
 		status.ProvisioningStatus.OrderURI = order.URI
 		status.ProvisioningStatus.OrderStatus = order.Status
-		return rc.updateStatus(routeReadOnly, status)
+		return rc.updateStatus(ctx, routeReadOnly, status)
 	}
 
 	order, err := acmeClient.GetOrder(ctx, status.ProvisioningStatus.OrderURI)
@@ -639,7 +639,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		// The order URI doesn't exist. Delete OrderUri and update the status.
 		klog.Warningf("Route %q: Found invalid OrderURI %q, removing it.", key, status.ProvisioningStatus.OrderURI)
 		status.ProvisioningStatus.OrderURI = ""
-		return rc.updateStatus(routeReadOnly, status)
+		return rc.updateStatus(ctx, routeReadOnly, status)
 	}
 	// TODO: acme or golang should fill in the value
 	order.URI = status.ProvisioningStatus.OrderURI
@@ -748,7 +748,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 					klog.V(2).Infof("Exposer route %s/%s not found, creating new one.", routeReadOnly.Namespace, desiredExposerRoute.Name)
 
-					exposerRoute, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Create(desiredExposerRoute)
+					exposerRoute, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Create(ctx, desiredExposerRoute, metav1.CreateOptions{})
 					if err != nil {
 						return err
 					}
@@ -804,7 +804,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 					klog.V(2).Infof("Exposer secret %s/%s not found, creating new one.", routeReadOnly.Namespace, desiredExposerSecret.Name)
 
-					exposerSecret, err = rc.kubeClient.CoreV1().Secrets(routeReadOnly.Namespace).Create(desiredExposerSecret)
+					exposerSecret, err = rc.kubeClient.CoreV1().Secrets(routeReadOnly.Namespace).Create(ctx, desiredExposerSecret, metav1.CreateOptions{})
 					if err != nil {
 						return err
 					}
@@ -923,7 +923,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 					klog.V(2).Infof("Exposer replica set %s/%s not found, creating new one.", routeReadOnly.Namespace, desiredExposerRS.Name)
 
-					exposerRS, err = rc.kubeClient.AppsV1().ReplicaSets(routeReadOnly.Namespace).Create(desiredExposerRS)
+					exposerRS, err = rc.kubeClient.AppsV1().ReplicaSets(routeReadOnly.Namespace).Create(ctx, desiredExposerRS, metav1.CreateOptions{})
 					if err != nil {
 						return err
 					}
@@ -978,7 +978,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 					klog.V(2).Infof("Exposer service %s/%s not found, creating new one.", routeReadOnly.Namespace, desiredExposerService.Name)
 
-					exposerService, err = rc.kubeClient.CoreV1().Services(routeReadOnly.Namespace).Create(desiredExposerService)
+					exposerService, err = rc.kubeClient.CoreV1().Services(routeReadOnly.Namespace).Create(ctx, desiredExposerService, metav1.CreateOptions{})
 					if err != nil {
 						return err
 					}
@@ -1045,7 +1045,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 			}
 		}
 
-		return rc.updateStatus(routeReadOnly, status)
+		return rc.updateStatus(ctx, routeReadOnly, status)
 
 	case acme.StatusProcessing:
 		// TODO: backoff but capped at some reasonable time
@@ -1053,7 +1053,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 		klog.V(4).Infof("Route %q: Order %q: Waiting to be validated by ACME server", key, order)
 
-		return rc.updateStatus(routeReadOnly, status)
+		return rc.updateStatus(ctx, routeReadOnly, status)
 
 	case acme.StatusReady:
 		// TODO: fix the golang acme lib
@@ -1113,12 +1113,12 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		route.Spec.TLS.Certificate = string(certPemData.Crt)
 
 		// TODO: consider RetryOnConflict with rechecking the managed annotation
-		_, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Update(route)
+		_, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Update(ctx, route, metav1.UpdateOptions{})
 		if err != nil {
 			return fmt.Errorf("can't update route %s/%s with new certificates: %v", routeReadOnly.Namespace, route.Name, err)
 		}
 
-		err = rc.CleanupExposerObjects(routeReadOnly)
+		err = rc.CleanupExposerObjects(ctx, routeReadOnly)
 		if err != nil {
 			klog.Errorf("Can't cleanup exposer objects: %v", err)
 		}
@@ -1139,21 +1139,21 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		if status.ProvisioningStatus.OrderStatus != previousOrderStatus {
 			status.ProvisioningStatus.Failures += 1
 		}
-		err = rc.CleanupExposerObjects(routeReadOnly)
+		err = rc.CleanupExposerObjects(ctx, routeReadOnly)
 		if err != nil {
 			klog.Errorf("Can't cleanup exposer objects: %v", err)
 		}
-		return rc.updateStatus(routeReadOnly, status)
+		return rc.updateStatus(ctx, routeReadOnly, status)
 
 	case acme.StatusExpired, acme.StatusRevoked, acme.StatusDeactivated:
 		if status.ProvisioningStatus.OrderStatus != previousOrderStatus {
 			status.ProvisioningStatus.Failures += 1
 		}
-		err = rc.CleanupExposerObjects(routeReadOnly)
+		err = rc.CleanupExposerObjects(ctx, routeReadOnly)
 		if err != nil {
 			klog.Errorf("Can't cleanup exposer objects: %v", err)
 		}
-		return rc.updateStatus(routeReadOnly, status)
+		return rc.updateStatus(ctx, routeReadOnly, status)
 
 	default:
 		return fmt.Errorf("route %q: invalid new order status %q; order URL: %q", key, order.Status, order.URI)
@@ -1247,13 +1247,13 @@ func (rc *RouteController) syncRouteToSecret(ctx context.Context, key string) er
 	secret.Data[corev1.TLSPrivateKeyKey] = []byte(routeReadOnly.Spec.TLS.Key)
 
 	if !exists {
-		_, err = rc.kubeClient.CoreV1().Secrets(routeReadOnly.Namespace).Create(secret)
+		_, err = rc.kubeClient.CoreV1().Secrets(routeReadOnly.Namespace).Create(ctx, secret, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("can't create Secret %s/%s: %v", routeReadOnly.Namespace, secret.Name, err)
 		}
 	} else {
 		if !reflect.DeepEqual(secret, secretReadOnly) {
-			_, err = rc.kubeClient.CoreV1().Secrets(routeReadOnly.Namespace).Update(secret)
+			_, err = rc.kubeClient.CoreV1().Secrets(routeReadOnly.Namespace).Update(ctx, secret, metav1.UpdateOptions{})
 			if err != nil {
 				return fmt.Errorf("failed to update Secret %s/%s with TLS data: %v", routeReadOnly.Namespace, secret.Name, err)
 			}
@@ -1263,12 +1263,12 @@ func (rc *RouteController) syncRouteToSecret(ctx context.Context, key string) er
 	return nil
 }
 
-func (rc *RouteController) CleanupExposerObjects(route *routev1.Route) error {
+func (rc *RouteController) CleanupExposerObjects(ctx context.Context, route *routev1.Route) error {
 	var gracePeriod int64 = 0
 	propagationPolicy := metav1.DeletePropagationBackground
 	klog.V(3).Infof("Cleaning up temporary exposer for Route %s/%s (UID=%s)", route.Namespace, route.Name, route.UID)
-	err := rc.routeClient.RouteV1().Routes(route.Namespace).DeleteCollection(
-		&metav1.DeleteOptions{
+	err := rc.routeClient.RouteV1().Routes(route.Namespace).DeleteCollection(ctx,
+		metav1.DeleteOptions{
 			GracePeriodSeconds: &gracePeriod,
 			PropagationPolicy:  &propagationPolicy,
 		},

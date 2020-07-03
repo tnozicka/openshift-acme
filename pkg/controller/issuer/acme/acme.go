@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/ghodss/yaml"
+	"github.com/tnozicka/openshift-acme/pkg/api"
+	"github.com/tnozicka/openshift-acme/pkg/helpers"
+	kubeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/kube"
 	"golang.org/x/crypto/acme"
-
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,10 +31,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog"
-
-	"github.com/tnozicka/openshift-acme/pkg/api"
-	"github.com/tnozicka/openshift-acme/pkg/helpers"
-	kubeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/kube"
 )
 
 const (
@@ -349,7 +347,7 @@ func (ac *AccountController) sync(ctx context.Context, key string) error {
 			Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 		})
 
-		registerCtx, registerCtxCancel := context.WithTimeout(context.TODO(), 15*time.Second)
+		registerCtx, registerCtxCancel := context.WithTimeout(ctx, 15*time.Second)
 		defer registerCtxCancel()
 		account = &acme.Account{
 			Contact: acmeIssuer.Account.Contacts,
@@ -368,7 +366,7 @@ func (ac *AccountController) sync(ctx context.Context, key string) error {
 				corev1.TLSPrivateKeyKey: keyPem,
 			},
 		}
-		secret, err = ac.kubeClient.CoreV1().Secrets(cmReadOnly.Namespace).Create(secret)
+		secret, err = ac.kubeClient.CoreV1().Secrets(cmReadOnly.Namespace).Create(ctx, secret, metav1.CreateOptions{})
 		if err != nil {
 			return err
 		}
@@ -430,7 +428,7 @@ func (ac *AccountController) sync(ctx context.Context, key string) error {
 		return nil
 	}
 
-	_, err = ac.kubeClient.CoreV1().ConfigMaps(cmReadOnly.Namespace).Update(cm)
+	_, err = ac.kubeClient.CoreV1().ConfigMaps(cmReadOnly.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}

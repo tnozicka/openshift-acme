@@ -172,7 +172,7 @@ func (o *Options) run(ctx context.Context, cmd *cobra.Command, streams genericcl
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		tcc.Run(ctx, o.Workers)
+		tcc.Run(ctx)
 	}()
 
 	<-ctx.Done()
