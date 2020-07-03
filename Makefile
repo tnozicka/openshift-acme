@@ -43,19 +43,65 @@ $(call add-bindata,v1.0.0,./bindata/v1.0.0/...,bindata,v100_0_assets,pkg/control
 # $4 - output
 $(call add-crd-gen,operator,./pkg/api/operator/v1,./pkg/api/operator/v1,./pkg/api/operator/v1)
 
+
+CODEGEN_PKG ?=./vendor/k8s.io/code-generator
+CODEGEN_HEADER_FILE ?=/dev/null
+CODEGEN_APIS_PACKAGE ?=$(GO_PACKAGE)/pkg/api
+CODEGEN_GROUPS_VERSIONS ?="operator/v1"
+define run-codegen
+	GOPATH=$(GOPATH) $(GO) run "$(CODEGEN_PKG)/cmd/$(1)" --go-header-file='$(CODEGEN_HEADER_FILE)' $(2)
+
+endef
+
+define run-deepcopy-gen
+	$(call run-codegen,deepcopy-gen,--input-dirs='github.com/tnozicka/openshift-acme/pkg/api/operator/v1' --output-file-base='zz_generated.deepcopy' --bounding-dirs='github.com/tnozicka/openshift-acme/pkg/api/' $(1))
+
+endef
+
+define run-client-gen
+	$(call run-codegen,client-gen,--clientset-name=versioned --input-base="./" --input='github.com/tnozicka/openshift-acme/pkg/api/operator/v1' --output-package='github.com/tnozicka/openshift-acme/pkg/client/operator/clientset' $(1))
+
+endef
+
+define run-lister-gen
+	$(call run-codegen,lister-gen,--input-dirs='github.com/tnozicka/openshift-acme/pkg/api/operator/v1' --output-package='github.com/tnozicka/openshift-acme/pkg/client/operator/listers' $(1))
+
+endef
+
+define run-informer-gen
+	$(call run-codegen,informer-gen,--input-dirs='github.com/tnozicka/openshift-acme/pkg/api/operator/v1' --output-package='github.com/tnozicka/openshift-acme/pkg/client/operator/informers' $(1))
+
+endef
+
+update-codegen:
+	$(call run-deepcopy-gen,)
+	$(call run-client-gen,)
+	$(call run-lister-gen,)
+	$(call run-informer-gen,)
+.PHONY: update-codegen
+
+verify-codegen:
+	$(call run-deepcopy-gen,--verify-only)
+	$(call run-client-gen,--verify-only)
+	$(call run-lister-gen,--verify-only)
+	$(call run-informer-gen,--verify-only)
+.PHONY: verify-codegen
+
+
 verify-deploy-files:
 	hack/diff-deploy-files.sh $(shell mktemp -d)
 .PHONY: verify-deploy-files
-
-verify: verify-deploy-files
-.PHONY: verify
 
 update-deploy-files:
 	mv ./deploy/.diffs/* $(shell mktemp -d) || true
 	hack/diff-deploy-files.sh ./deploy/.diffs
 .PHONY: update-deploy-files
 
-update: update-deploy-files
+
+verify: verify-deploy-files verify-codegen
+.PHONY: verify
+
+update: update-deploy-files update-codegen
 .PHONY: update
 
 test-e2e: export E2E_DOMAIN ?=$(shell oc get ingresses.config.openshift.io cluster --template='{{.spec.domain}}')
