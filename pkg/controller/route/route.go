@@ -71,11 +71,12 @@ var (
 )
 
 type RouteController struct {
-	annotation              string
-	certOrderBackoffInitial time.Duration
-	certOrderBackoffMax     time.Duration
-	exposerImage            string
-	controllerNamespace     string
+	annotation               string
+	certOrderBackoffInitial  time.Duration
+	certOrderBackoffMax      time.Duration
+	certDefaultRSAKeyBitSize int
+	exposerImage             string
+	controllerNamespace      string
 
 	kubeClient                 kubernetes.Interface
 	kubeInformersForNamespaces kubeinformers.Interface
@@ -95,6 +96,7 @@ func NewRouteController(
 	annotation string,
 	certOrderBackoffInitial time.Duration,
 	certOrderBackoffMax time.Duration,
+	certDefaultRSAKeyBitSize int,
 	exposerImage string,
 	controllerNamespace string,
 	kubeClient kubernetes.Interface,
@@ -107,11 +109,12 @@ func NewRouteController(
 	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	rc := &RouteController{
-		annotation:              annotation,
-		certOrderBackoffInitial: certOrderBackoffInitial,
-		certOrderBackoffMax:     certOrderBackoffMax,
-		exposerImage:            exposerImage,
-		controllerNamespace:     controllerNamespace,
+		annotation:               annotation,
+		certOrderBackoffInitial:  certOrderBackoffInitial,
+		certOrderBackoffMax:      certOrderBackoffMax,
+		certDefaultRSAKeyBitSize: certDefaultRSAKeyBitSize,
+		exposerImage:             exposerImage,
+		controllerNamespace:      controllerNamespace,
 
 		kubeClient:                 kubeClient,
 		kubeInformersForNamespaces: kubeInformersForNamespaces,
@@ -1047,7 +1050,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 	case acme.StatusProcessing:
 		// TODO: backoff but capped at some reasonable time
-		rc.queue.AddAfter(routeReadOnly, 15*time.Second)
+		rc.queue.AddAfter(key, 15*time.Second)
 
 		klog.V(4).Infof("Route %q: Order %q: Waiting to be validated by ACME server", key, order)
 
@@ -1062,7 +1065,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		template := x509.CertificateRequest{
 			DNSNames: []string{routeReadOnly.Spec.Host},
 		}
-		privateKey, err := rsa.GenerateKey(cryptorand.Reader, 4096)
+		privateKey, err := rsa.GenerateKey(cryptorand.Reader, rc.certDefaultRSAKeyBitSize)
 		if err != nil {
 			return fmt.Errorf("failed to generate RSA key: %v", err)
 		}

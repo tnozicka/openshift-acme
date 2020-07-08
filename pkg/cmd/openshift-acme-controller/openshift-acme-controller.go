@@ -47,6 +47,7 @@ type Options struct {
 	LeaderelectionRetryPeriod   time.Duration
 	CertOrderBackoffInitial     time.Duration
 	CertOrderBackoffMax         time.Duration
+	CertDefaultRSAKeyBitSize    int
 	Namespaces                  []string
 	AcmeOrderTimeout            time.Duration
 
@@ -68,6 +69,7 @@ func NewOptions(streams genericclioptions.IOStreams) *Options {
 		LeaderelectionRetryPeriod:   10 * time.Second,
 		CertOrderBackoffInitial:     5 * time.Minute,
 		CertOrderBackoffMax:         24 * time.Hour,
+		CertDefaultRSAKeyBitSize:    4096,
 
 		Annotation:       api.DefaultTlsAcmeAnnotation,
 		AcmeOrderTimeout: 15 * time.Minute,
@@ -132,6 +134,7 @@ func NewOpenshiftAcmeControllerCommand(streams genericclioptions.IOStreams) *cob
 
 	rootCmd.PersistentFlags().DurationVar(&o.CertOrderBackoffInitial, "cert-order-backoff-initial", o.CertOrderBackoffInitial, "Initial value for the exponential backoff guarding retrying failed orders.")
 	rootCmd.PersistentFlags().DurationVar(&o.CertOrderBackoffMax, "cert-order-backoff-max", o.CertOrderBackoffMax, "The upper limit for for the exponential backoff guarding retrying failed orders.")
+	rootCmd.PersistentFlags().IntVar(&o.CertDefaultRSAKeyBitSize, "cert-default-rsa-key-bit-size", o.CertDefaultRSAKeyBitSize, "The default RSA key bit size for new certificates.")
 
 	rootCmd.PersistentFlags().StringVarP(&o.ExposerImage, "exposer-image", "", o.ExposerImage, "Image to use for exposing tokens for http based validation. (In standard configuration this contains openshift-acme-exposer binary, but the API is generic.)")
 
@@ -336,7 +339,7 @@ func (o *Options) Run(cmd *cobra.Command, streams genericclioptions.IOStreams) e
 
 	ac := acmeissuer.NewAccountController(o.kubeClient, kubeInformersForNamespaces)
 
-	rc := routecontroller.NewRouteController(o.Annotation, o.CertOrderBackoffInitial, o.CertOrderBackoffMax, o.ExposerImage, o.ControllerNamespace, o.kubeClient, kubeInformersForNamespaces, o.routeClient, routeInformersForNamespaces)
+	rc := routecontroller.NewRouteController(o.Annotation, o.CertOrderBackoffInitial, o.CertOrderBackoffMax, o.CertDefaultRSAKeyBitSize, o.ExposerImage, o.ControllerNamespace, o.kubeClient, kubeInformersForNamespaces, o.routeClient, routeInformersForNamespaces)
 
 	kubeInformersForNamespaces.Start(stopCh)
 	routeInformersForNamespaces.Start(stopCh)
