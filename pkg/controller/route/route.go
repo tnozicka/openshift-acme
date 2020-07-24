@@ -556,7 +556,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 	}
 
 	if len(reason) == 0 {
-		klog.V(4).Infof("Route %q doesn't needs new certificate.", key)
+		klog.V(4).Infof("Route %q doesn't need new certificate.", key)
 		return rc.updateStatus(routeReadOnly, status)
 	}
 
