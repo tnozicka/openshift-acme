@@ -130,10 +130,10 @@ func (o *Options) Complete() error {
 		return fmt.Errorf("can't build route clientset: %w", err)
 	}
 
-	// o.operatorClient, err = operatorclientset.NewForConfig(o.RestConfig)
-	// if err != nil {
-	// 	return fmt.Errorf("can't build operator clientset: %w", err)
-	// }
+	o.operatorClient, err = operatorclientset.NewForConfig(o.RestConfig)
+	if err != nil {
+		return fmt.Errorf("can't build operator clientset: %w", err)
+	}
 
 	return nil
 }
@@ -185,6 +185,14 @@ func (o *Options) run(ctx context.Context, cmd *cobra.Command, streams genericcl
 
 	var wg sync.WaitGroup
 	defer wg.Wait()
+
+	kubeInformersForNamespaces.Start(ctx.Done())
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		operatorInformers.Start(ctx.Done())
+	}()
 
 	wg.Add(1)
 	go func() {

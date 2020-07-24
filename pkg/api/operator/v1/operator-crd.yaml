@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
   creationTimestamp: null
-  name: acmecontroller.operator.openshift.io
+  name: acmecontrollers.operator.openshift.io
 spec:
   group: operator.openshift.io
   names:
@@ -39,6 +39,24 @@ spec:
           description: spec is the specification of the desired behavior of the openshift-acme
             controller
           type: object
+          properties:
+            logLevel:
+              description: logLevel is an intent based logging for an overall component.  It
+                does not give fine grained control, but it is a simple way to manage
+                coarse grained logging choices that operators have to interpret for
+                their operands.
+              type: string
+            managementState:
+              description: managementState indicates whether and how the operator
+                should manage the component
+              type: string
+              pattern: ^(Managed|Unmanaged|Force|Removed)$
+            operatorLogLevel:
+              description: operatorLogLevel is an intent based logging for the operator
+                itself.  It does not give fine grained control, but it is a simple
+                way to manage coarse grained logging choices that operators have to
+                interpret for themselves.
+              type: string
         status:
           description: status is the most recently observed status of the openshift-acme
             controller
@@ -49,11 +67,32 @@ spec:
                 and at the desired state
               type: integer
               format: int32
+            conditions:
+              description: conditions is a list of conditions and their status
+              type: array
+              items:
+                description: OperatorCondition is just the standard condition fields.
+                type: object
+                properties:
+                  lastTransitionTime:
+                    type: string
+                    format: date-time
+                  message:
+                    type: string
+                  reason:
+                    type: string
+                  status:
+                    type: string
+                  type:
+                    type: string
             observedGeneration:
               description: observedGeneration is the last generation change you've
                 dealt with
               type: integer
               format: int64
+            version:
+              description: version is the level this availability applies to
+              type: string
 status:
   acceptedNames:
     kind: ""

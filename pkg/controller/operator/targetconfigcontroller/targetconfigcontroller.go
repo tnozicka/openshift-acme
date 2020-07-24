@@ -333,7 +333,7 @@ func (c *TargetConfigController) runWorker(ctx context.Context) {
 func (c *TargetConfigController) Run(ctx context.Context) {
 	defer utilruntime.HandleCrash()
 
-	klog.Info("Starting %s", ControllerName)
+	klog.Infof("Starting %s", ControllerName)
 	var wg sync.WaitGroup
 	defer func() {
 		klog.Info("Shutting down %s", ControllerName)

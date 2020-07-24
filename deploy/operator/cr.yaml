@@ -1,0 +1,6 @@
+apiVersion: operator.openshift.io/v1
+kind: ACMEController
+metadata:
+  name: cluster
+spec:
+  managementState: Managed
