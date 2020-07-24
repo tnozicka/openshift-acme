@@ -7,13 +7,13 @@ import (
 	time "time"
 
 	operatorv1 "github.com/tnozicka/openshift-acme/pkg/api/operator/v1"
+	versioned "github.com/tnozicka/openshift-acme/pkg/client/operator/clientset/versioned"
 	internalinterfaces "github.com/tnozicka/openshift-acme/pkg/client/operator/informers/externalversions/internalinterfaces"
+	v1 "github.com/tnozicka/openshift-acme/pkg/client/operator/listers/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	cache "k8s.io/client-go/tools/cache"
-	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
-	v1 "k8s.io/kubernetes/pkg/client/listers/operator/v1"
 )
 
 // ACMEControllerInformer provides access to a shared informer and lister for
@@ -31,14 +31,14 @@ type aCMEControllerInformer struct {
 // NewACMEControllerInformer constructs a new informer for ACMEController type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewACMEControllerInformer(client clientset.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+func NewACMEControllerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
 	return NewFilteredACMEControllerInformer(client, resyncPeriod, indexers, nil)
 }
 
 // NewFilteredACMEControllerInformer constructs a new informer for ACMEController type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredACMEControllerInformer(client clientset.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredACMEControllerInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -60,7 +60,7 @@ func NewFilteredACMEControllerInformer(client clientset.Interface, resyncPeriod 
 	)
 }
 
-func (f *aCMEControllerInformer) defaultInformer(client clientset.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+func (f *aCMEControllerInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
 	return NewFilteredACMEControllerInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 

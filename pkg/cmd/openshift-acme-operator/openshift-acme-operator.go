@@ -5,9 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"sync"
+	"time"
 
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/spf13/cobra"
+	operatorclientset "github.com/tnozicka/openshift-acme/pkg/client/operator/clientset/versioned"
+	operatorinformers "github.com/tnozicka/openshift-acme/pkg/client/operator/informers/externalversions"
 	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
 	cmdutil "github.com/tnozicka/openshift-acme/pkg/cmd/util"
 	"github.com/tnozicka/openshift-acme/pkg/controller/operator/targetconfigcontroller"
@@ -29,8 +32,9 @@ type Options struct {
 	OperandNamespace string
 	OperandImage     string
 
-	kubeClient  kubernetes.Interface
-	routeClient routeclientset.Interface
+	kubeClient     kubernetes.Interface
+	routeClient    routeclientset.Interface
+	operatorClient operatorclientset.Interface
 }
 
 func NewOptions(streams genericclioptions.IOStreams) *Options {
@@ -126,6 +130,11 @@ func (o *Options) Complete() error {
 		return fmt.Errorf("can't build route clientset: %w", err)
 	}
 
+	// o.operatorClient, err = operatorclientset.NewForConfig(o.RestConfig)
+	// if err != nil {
+	// 	return fmt.Errorf("can't build operator clientset: %w", err)
+	// }
+
 	return nil
 }
 
@@ -164,7 +173,15 @@ func (o *Options) run(ctx context.Context, cmd *cobra.Command, streams genericcl
 		},
 	)
 
-	tcc := targetconfigcontroller.NewTargetConfigController(o.OperandImage, o.kubeClient, kubeInformersForNamespaces)
+	operatorInformers := operatorinformers.NewSharedInformerFactory(o.operatorClient, 10*time.Minute)
+
+	tcc := targetconfigcontroller.NewTargetConfigController(
+		o.OperandImage,
+		o.kubeClient,
+		o.operatorClient.OperatorV1(),
+		operatorInformers.Operator().V1().ACMEControllers(),
+		kubeInformersForNamespaces,
+	)
 
 	var wg sync.WaitGroup
 	defer wg.Wait()

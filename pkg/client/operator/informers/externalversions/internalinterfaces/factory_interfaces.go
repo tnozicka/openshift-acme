@@ -5,14 +5,14 @@ package internalinterfaces
 import (
 	time "time"
 
+	versioned "github.com/tnozicka/openshift-acme/pkg/client/operator/clientset/versioned"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	cache "k8s.io/client-go/tools/cache"
-	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 )
 
-// NewInformerFunc takes clientset.Interface and time.Duration to return a SharedIndexInformer.
-type NewInformerFunc func(clientset.Interface, time.Duration) cache.SharedIndexInformer
+// NewInformerFunc takes versioned.Interface and time.Duration to return a SharedIndexInformer.
+type NewInformerFunc func(versioned.Interface, time.Duration) cache.SharedIndexInformer
 
 // SharedInformerFactory a small interface to allow for adding an informer without an import cycle
 type SharedInformerFactory interface {

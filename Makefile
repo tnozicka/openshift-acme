@@ -49,7 +49,7 @@ CODEGEN_HEADER_FILE ?=/dev/null
 CODEGEN_APIS_PACKAGE ?=$(GO_PACKAGE)/pkg/api
 CODEGEN_GROUPS_VERSIONS ?="operator/v1"
 define run-codegen
-	GOPATH=$(GOPATH) $(GO) run "$(CODEGEN_PKG)/cmd/$(1)" --go-header-file='$(CODEGEN_HEADER_FILE)' $(2)
+	GOPATH=$(GOPATH) $(GO) run $(GO_MOD_FLAGS) "$(CODEGEN_PKG)/cmd/$(1)" --go-header-file='$(CODEGEN_HEADER_FILE)' $(2)
 
 endef
 
@@ -69,7 +69,7 @@ define run-lister-gen
 endef
 
 define run-informer-gen
-	$(call run-codegen,informer-gen,--input-dirs='github.com/tnozicka/openshift-acme/pkg/api/operator/v1' --output-package='github.com/tnozicka/openshift-acme/pkg/client/operator/informers' $(1))
+	$(call run-codegen,informer-gen,--input-dirs='github.com/tnozicka/openshift-acme/pkg/api/operator/v1' --output-package='github.com/tnozicka/openshift-acme/pkg/client/operator/informers' --versioned-clientset-package "github.com/tnozicka/openshift-acme/pkg/client/operator/clientset/versioned" --listers-package="github.com/tnozicka/openshift-acme/pkg/client/operator/listers" $(1))
 
 endef
 

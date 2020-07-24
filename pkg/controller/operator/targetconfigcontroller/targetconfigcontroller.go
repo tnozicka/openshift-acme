@@ -8,11 +8,17 @@ import (
 	"sync"
 	"time"
 
+	openshiftoperatorv1 "github.com/openshift/api/operator/v1"
+	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"github.com/tnozicka/openshift-acme/pkg/api"
+	operatorv1clientset "github.com/tnozicka/openshift-acme/pkg/client/operator/clientset/versioned/typed/operator/v1"
+	operatorv1informers "github.com/tnozicka/openshift-acme/pkg/client/operator/informers/externalversions/operator/v1"
+	operatorv1lister "github.com/tnozicka/openshift-acme/pkg/client/operator/listers/operator/v1"
 	v100_00_assets "github.com/tnozicka/openshift-acme/pkg/controller/operator/v100_00_assets"
 	kubeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/kube"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,8 +36,19 @@ import (
 
 const (
 	ControllerName = "TargetConfigController"
+	objectName     = "cluster"
 	workQueueKey   = "key"
 	resyncPeriod   = 15 * time.Minute
+
+	deploymentConditionTypePrefix = "Deployment"
+)
+
+// TODO: move to const when https://github.com/openshift/api/pull/707 merges
+var (
+	deploymentAvailableConditionType   = deploymentConditionTypePrefix + openshiftoperatorv1.OperatorStatusTypeAvailable
+	deploymentProgressingConditionType = deploymentConditionTypePrefix + openshiftoperatorv1.OperatorStatusTypeProgressing
+	deploymentDegradedConditionType    = deploymentConditionTypePrefix + openshiftoperatorv1.OperatorStatusTypeDegraded
+	targetConfigControllerDegraded     = "TargetConfigController" + openshiftoperatorv1.OperatorStatusTypeDegraded
 )
 
 type TargetConfigController struct {
@@ -40,14 +57,21 @@ type TargetConfigController struct {
 	kubeClient                 kubernetes.Interface
 	kubeInformersForNamespaces kubeinformers.Interface
 
+	operatorClient       operatorv1clientset.OperatorV1Interface
+	acmeControllerLister operatorv1lister.ACMEControllerLister
+
 	recorder record.EventRecorder
 
 	queue workqueue.RateLimitingInterface
+
+	cachesToSync []cache.InformerSynced
 }
 
 func NewTargetConfigController(
 	targetNamespace string,
 	kubeClient kubernetes.Interface,
+	operatorClient operatorv1clientset.OperatorV1Interface,
+	acmeControllerInformer operatorv1informers.ACMEControllerInformer,
 	kubeInformersForNamespaces kubeinformers.Interface,
 ) *TargetConfigController {
 	eventBroadcaster := record.NewBroadcaster()
@@ -58,15 +82,25 @@ func NewTargetConfigController(
 		targetNamespace: targetNamespace,
 		kubeClient:      kubeClient,
 
+		operatorClient:       operatorClient,
+		acmeControllerLister: acmeControllerInformer.Lister(),
+
 		recorder: eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: ControllerName}),
 
 		queue: workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+
+		cachesToSync: []cache.InformerSynced{
+			acmeControllerInformer.Informer().HasSynced,
+		},
 	}
 
-	kubeInformersForNamespaces.InformersFor(c.targetNamespace).
-		Core().V1().ConfigMaps().Informer().AddEventHandler(c.eventHandler())
-	kubeInformersForNamespaces.InformersFor(c.targetNamespace).
-		Apps().V1().Deployments().Informer().AddEventHandler(c.eventHandler())
+	kubeInformersForNamespaces.InformersFor(c.targetNamespace).Core().V1().ConfigMaps().Informer().AddEventHandler(c.eventHandler())
+	kubeInformersForNamespaces.InformersFor(c.targetNamespace).Apps().V1().Deployments().Informer().AddEventHandler(c.eventHandler())
+	c.cachesToSync = append(
+		c.cachesToSync,
+		kubeInformersForNamespaces.InformersFor(c.targetNamespace).Core().V1().ConfigMaps().Informer().HasSynced,
+		kubeInformersForNamespaces.InformersFor(c.targetNamespace).Apps().V1().Deployments().Informer().HasSynced,
+	)
 
 	return c
 }
@@ -127,15 +161,147 @@ func (c *TargetConfigController) sync(ctx context.Context) error {
 		klog.V(4).Infof("Finished syncing %s", ControllerName)
 	}()
 
-	var errors []error
+	operator, err := c.acmeControllerLister.Get(objectName)
+	if err != nil {
+		return err
+	}
+
+	switch operator.Spec.ManagementState {
+	case openshiftoperatorv1.Managed:
+	case openshiftoperatorv1.Unmanaged, openshiftoperatorv1.Removed:
+		return nil
+	default:
+		c.recorder.Eventf(operator, "ManagementStateUnknown", "Unrecognized operator management state %q", string(operator.Spec.ManagementState))
+		return nil
+	}
+
+	var reconciliationErrors []error
+
+	status := operator.Status.DeepCopy()
+	status.ObservedGeneration = operator.Generation
+
+	if v1helpers.FindOperatorCondition(operator.Status.Conditions, deploymentAvailableConditionType) == nil {
+		v1helpers.SetOperatorCondition(&operator.Status.Conditions, openshiftoperatorv1.OperatorCondition{
+			Type:   deploymentAvailableConditionType,
+			Status: openshiftoperatorv1.ConditionUnknown,
+		})
+	}
+	if v1helpers.FindOperatorCondition(operator.Status.Conditions, deploymentProgressingConditionType) == nil {
+		v1helpers.SetOperatorCondition(&operator.Status.Conditions, openshiftoperatorv1.OperatorCondition{
+			Type:   deploymentProgressingConditionType,
+			Status: openshiftoperatorv1.ConditionUnknown,
+		})
+	}
+
+	if v1helpers.FindOperatorCondition(operator.Status.Conditions, deploymentDegradedConditionType) == nil {
+		v1helpers.SetOperatorCondition(&operator.Status.Conditions, openshiftoperatorv1.OperatorCondition{
+			Type:   deploymentDegradedConditionType,
+			Status: openshiftoperatorv1.ConditionUnknown,
+		})
+	}
 
 	deployment, err := c.manageDeployment(ctx)
 	if err != nil {
-		errors = append(errors, fmt.Errorf("managing deployment: %v", err))
+		reconciliationErrors = append(reconciliationErrors, fmt.Errorf("managing deployment: %v", err))
+	} else {
+		// Act only if the status is up-to-date
+		if deployment.Status.ObservedGeneration == deployment.Generation {
+			// FIXME: We are not able to determine how many available replicas are the new ones.
+			//  (Needs structured status in kube.)
+			status.AvailableReplicas = 0
+
+			if deployment.Status.AvailableReplicas > 0 {
+				v1helpers.SetOperatorCondition(&operator.Status.Conditions, openshiftoperatorv1.OperatorCondition{
+					Type:    deploymentAvailableConditionType,
+					Status:  openshiftoperatorv1.ConditionTrue,
+					Reason:  "AvailableReplica",
+					Message: "At least one replica is available.",
+				})
+			} else {
+				v1helpers.SetOperatorCondition(&operator.Status.Conditions, openshiftoperatorv1.OperatorCondition{
+					Type:    deploymentAvailableConditionType,
+					Status:  openshiftoperatorv1.ConditionFalse,
+					Reason:  "NoReplicasAvailable",
+					Message: "No replicas are available.",
+				})
+			}
+
+			if deployment.Status.Replicas > deployment.Status.UpdatedReplicas {
+				v1helpers.SetOperatorCondition(&operator.Status.Conditions, openshiftoperatorv1.OperatorCondition{
+					Type:    deploymentProgressingConditionType,
+					Status:  openshiftoperatorv1.ConditionTrue,
+					Reason:  "DeploymentProgressing",
+					Message: "Deployment is progressing.",
+				})
+			} else {
+				v1helpers.SetOperatorCondition(&operator.Status.Conditions, openshiftoperatorv1.OperatorCondition{
+					Type:    deploymentProgressingConditionType,
+					Status:  openshiftoperatorv1.ConditionFalse,
+					Reason:  "DeploymentRolledOut",
+					Message: "Deployment has finished the rollout.",
+				})
+			}
+
+			if deployment.Status.Replicas == *deployment.Spec.Replicas &&
+				deployment.Status.UpdatedReplicas == *deployment.Spec.Replicas &&
+				deployment.Status.AvailableReplicas == *deployment.Spec.Replicas {
+				v1helpers.SetOperatorCondition(&operator.Status.Conditions, openshiftoperatorv1.OperatorCondition{
+					Type:    deploymentDegradedConditionType,
+					Status:  openshiftoperatorv1.ConditionTrue,
+					Reason:  "UnavailableReplicas.",
+					Message: "Deployment has unavailable replicas.",
+				})
+			} else {
+				v1helpers.SetOperatorCondition(&operator.Status.Conditions, openshiftoperatorv1.OperatorCondition{
+					Type:    deploymentDegradedConditionType,
+					Status:  openshiftoperatorv1.ConditionFalse,
+					Reason:  "AllReplicasUp",
+					Message: "Deployment has all replicas up to date and available.",
+				})
+
+			}
+		}
 	}
 
-	manageErr := errorutils.NewAggregate(errors)
-	// Update status
+	reconciliationError := errorutils.NewAggregate(reconciliationErrors)
+	if reconciliationError != nil {
+		klog.V(2).Info(reconciliationError)
+		v1helpers.SetOperatorCondition(&operator.Status.Conditions, openshiftoperatorv1.OperatorCondition{
+			Type:    targetConfigControllerDegraded,
+			Status:  openshiftoperatorv1.ConditionTrue,
+			Reason:  "SynchronizationError",
+			Message: reconciliationError.Error(),
+		})
+	} else {
+		v1helpers.SetOperatorCondition(&operator.Status.Conditions, openshiftoperatorv1.OperatorCondition{
+			Type:    targetConfigControllerDegraded,
+			Status:  openshiftoperatorv1.ConditionFalse,
+			Reason:  "AsExpected",
+			Message: "AsExpected",
+		})
+	}
+
+	// FIXME: DeepEqual + condition time
+	timelessStatus := status.DeepCopy()
+	for i := range timelessStatus.Conditions {
+		cond := &timelessStatus.Conditions[i]
+		oldCond := v1helpers.FindOperatorCondition(operator.Status.Conditions, cond.Type)
+		if oldCond != nil {
+			cond.LastTransitionTime = oldCond.LastTransitionTime
+		}
+	}
+	if apiequality.Semantic.DeepEqual(timelessStatus, operator.Status) {
+		return nil
+	}
+
+	_, err = c.operatorClient.ACMEControllers().UpdateStatus(ctx, operator, metav1.UpdateOptions{})
+	if apierrors.IsConflict(err) {
+		klog.V(2).Info(reconciliationError)
+		c.queue.Add(workQueueKey)
+		return nil
+	} else if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -175,6 +341,11 @@ func (c *TargetConfigController) Run(ctx context.Context) {
 		wg.Wait()
 		klog.Info("%s shut down", ControllerName)
 	}()
+
+	ok := cache.WaitForNamedCacheSync(ControllerName, ctx.Done(), c.cachesToSync...)
+	if !ok {
+		return
+	}
 
 	wg.Add(1)
 	go func() {
