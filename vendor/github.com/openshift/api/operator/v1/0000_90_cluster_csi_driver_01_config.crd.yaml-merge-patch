@@ -1,0 +1,12 @@
+spec:
+  validation:
+    openAPIV3Schema:
+      properties:
+        metadata:
+          properties:
+            name:
+              type: string
+              enum:
+              - ebs.csi.aws.com
+              - manila.csi.openstack.org
+              - csi.ovirt.org

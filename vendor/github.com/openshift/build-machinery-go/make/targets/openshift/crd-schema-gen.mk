@@ -18,7 +18,7 @@ endef
 # $2 - manifests
 # $3 - output
 define run-crd-gen
-	'$(CONTROLLER_GEN)' \
+	$(CONTROLLER_GEN) \
 		schemapatch:manifests="$(2)" \
 		paths="$(subst $(empty) ,;,$(1))" \
 		output:dir="$(3)"
@@ -32,7 +32,7 @@ endef
 # $4 - output
 define add-crd-gen-internal
 
-update-codegen-crds-$(1): ensure-controller-gen ensure-yq
+update-codegen-crds-$(1): ensure-yq
 	$(call run-crd-gen,$(2),$(3),$(4))
 .PHONY: update-codegen-crds-$(1)
 
@@ -40,7 +40,7 @@ update-codegen-crds: update-codegen-crds-$(1)
 .PHONY: update-codegen-crds
 
 verify-codegen-crds-$(1): VERIFY_CODEGEN_CRD_TMP_DIR:=$$(shell mktemp -d)
-verify-codegen-crds-$(1): ensure-controller-gen ensure-yq
+verify-codegen-crds-$(1): ensure-yq
 	$(call run-crd-gen,$(2),$(3),$$(VERIFY_CODEGEN_CRD_TMP_DIR))
 	$$(foreach p,$$(wildcard $(3)/*.crd.yaml),$$(call diff-file,$$(p),$$(subst $(3),$$(VERIFY_CODEGEN_CRD_TMP_DIR),$$(p))))
 .PHONY: verify-codegen-crds-$(1)
