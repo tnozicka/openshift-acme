@@ -106,6 +106,10 @@ func (o *Options) Validate() error {
 	errs = append(errs, o.LeaderElection.Validate())
 	errs = append(errs, o.InClusterReflection.Validate())
 
+	if len(o.OperandNamespace) == 0 {
+		return fmt.Errorf("operand namespace not specified")
+	}
+
 	return apierrors.NewAggregate(errs)
 }
 
@@ -176,6 +180,7 @@ func (o *Options) run(ctx context.Context, cmd *cobra.Command, streams genericcl
 	operatorInformers := operatorinformers.NewSharedInformerFactory(o.operatorClient, 10*time.Minute)
 
 	tcc := targetconfigcontroller.NewTargetConfigController(
+		o.OperandNamespace,
 		o.OperandImage,
 		o.kubeClient,
 		o.operatorClient.OperatorV1(),

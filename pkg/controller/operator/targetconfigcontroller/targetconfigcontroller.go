@@ -69,6 +69,7 @@ type TargetConfigController struct {
 
 func NewTargetConfigController(
 	targetNamespace string,
+	operandImage string,
 	kubeClient kubernetes.Interface,
 	operatorClient operatorv1clientset.OperatorV1Interface,
 	acmeControllerInformer operatorv1informers.ACMEControllerInformer,
@@ -80,7 +81,9 @@ func NewTargetConfigController(
 
 	c := &TargetConfigController{
 		targetNamespace: targetNamespace,
-		kubeClient:      kubeClient,
+
+		kubeClient:                 kubeClient,
+		kubeInformersForNamespaces: kubeInformersForNamespaces,
 
 		operatorClient:       operatorClient,
 		acmeControllerLister: acmeControllerInformer.Lister(),
@@ -106,10 +109,26 @@ func NewTargetConfigController(
 }
 
 func (c *TargetConfigController) eventHandler() cache.ResourceEventHandler {
+	resourceDesc := func(obj interface{}) string {
+		m, ok := obj.(metav1.Object)
+		if !ok {
+			return fmt.Sprintf("%T", obj)
+		}
+		return fmt.Sprintf("%s/%s(%s)", m.GetNamespace(), m.GetName(), m.GetUID())
+	}
 	return cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { c.queue.Add(workQueueKey) },
-		UpdateFunc: func(old, new interface{}) { c.queue.Add(workQueueKey) },
-		DeleteFunc: func(obj interface{}) { c.queue.Add(workQueueKey) },
+		AddFunc: func(obj interface{}) {
+			klog.V(5).Infof("Adding %s", resourceDesc(obj))
+			c.queue.Add(workQueueKey)
+		},
+		UpdateFunc: func(old, new interface{}) {
+			klog.V(5).Infof("Updating from %s to %s", resourceDesc(old), resourceDesc(new))
+			c.queue.Add(workQueueKey)
+		},
+		DeleteFunc: func(obj interface{}) {
+			klog.V(5).Infof("Deleting %s", resourceDesc(obj))
+			c.queue.Add(workQueueKey)
+		},
 	}
 }
 
@@ -163,7 +182,7 @@ func (c *TargetConfigController) sync(ctx context.Context) error {
 
 	operator, err := c.acmeControllerLister.Get(objectName)
 	if err != nil {
-		return err
+		return fmt.Errorf("can't get operator config: %w", err)
 	}
 
 	switch operator.Spec.ManagementState {
@@ -202,7 +221,7 @@ func (c *TargetConfigController) sync(ctx context.Context) error {
 
 	deployment, err := c.manageDeployment(ctx)
 	if err != nil {
-		reconciliationErrors = append(reconciliationErrors, fmt.Errorf("managing deployment: %v", err))
+		reconciliationErrors = append(reconciliationErrors, fmt.Errorf("managing deployment: %w", err))
 	} else {
 		// Act only if the status is up-to-date
 		if deployment.Status.ObservedGeneration == deployment.Generation {
@@ -300,7 +319,7 @@ func (c *TargetConfigController) sync(ctx context.Context) error {
 		c.queue.Add(workQueueKey)
 		return nil
 	} else if err != nil {
-		return err
+		return fmt.Errorf("can't update status: %w", err)
 	}
 
 	return nil
@@ -319,7 +338,7 @@ func (c *TargetConfigController) processNextItem(ctx context.Context) bool {
 		return true
 	}
 
-	utilruntime.HandleError(fmt.Errorf("syncing key %v failed with : %v", key, err))
+	utilruntime.HandleError(fmt.Errorf("syncing key '%v' failed: %v", key, err))
 	c.queue.AddRateLimited(key)
 
 	return true
@@ -366,7 +385,7 @@ func (c *TargetConfigController) Run(ctx context.Context) {
 
 func DecodeAssetOrDie(path string) runtime.Object {
 	obj, err := runtime.Decode(
-		scheme.Codecs.UniversalDecoder(corev1.SchemeGroupVersion),
+		scheme.Codecs.UniversalDeserializer(),
 		v100_00_assets.MustAsset(path),
 	)
 	if err != nil {
