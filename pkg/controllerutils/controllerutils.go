@@ -50,7 +50,7 @@ func getIssuerConfigMapsForObject(obj metav1.ObjectMeta, globalIssuerNamesapce s
 
 	sort.Slice(issuerConfigMaps, func(i, j int) bool {
 		lhs := issuerConfigMaps[i]
-		rhs := issuerConfigMaps[i]
+		rhs := issuerConfigMaps[j]
 
 		lhsPrio := 0
 		lhsPrioString, ok := lhs.Annotations[api.AcmePriorityAnnotation]
