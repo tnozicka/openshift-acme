@@ -4,7 +4,6 @@ metadata:
   name: openshift-acme
   labels:
     app: openshift-acme
-  annotations:
 spec:
   selector:
     matchLabels:

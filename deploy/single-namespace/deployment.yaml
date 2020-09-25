@@ -27,6 +27,6 @@ spec:
         - --namespace=$(CURRENT_NAMESPACE)
         env:
         - name: CURRENT_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
+        valueFrom:
+        fieldRef:
+        fieldPath: metadata.namespace

@@ -10,7 +10,7 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
-	cmd "github.com/tnozicka/openshift-acme/pkg/cmd/openshift-acme-operator"
+	cmd "github.com/tnozicka/openshift-acme/pkg/cmd/operator"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
@@ -33,7 +33,7 @@ func main() {
 
 	utilruntime.Must(routev1.Install(scheme.Scheme))
 
-	command := cmd.NewOpenshiftAcmeOperatorCommand(genericclioptions.IOStreams{
+	command := cmd.NewOperatorCommand(genericclioptions.IOStreams{
 		In:     os.Stdin,
 		Out:    os.Stdout,
 		ErrOut: os.Stderr,

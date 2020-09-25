@@ -6,7 +6,12 @@ all: build
 GO_BUILD_PACKAGES :=./cmd/...
 GO_TEST_PACKAGES :=./cmd/... ./pkg/...
 
-IMAGE_REGISTRY :=quay.io
+CONTROLLER_NAMESPACE :=acme-controller
+
+IMAGE_REF :=quay.io/tnozicka/openshift-acme
+CONTROLLER_IMAGE :=$(IMAGE_REF):controller
+EXPOSER_IMAGE :=$(IMAGE_REF):exposer
+OPERATOR_IMAGE :=$(IMAGE_REF):operator
 
 # Include the library makefile
 include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
@@ -23,8 +28,9 @@ include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 # $2 - Dockerfile path
 # $3 - context directory for image build
 # It will generate target "image-$(1)" for builing the image an binding it as a prerequisite to target "images".
-$(call build-image,openshift-acme-controller,$(IMAGE_REGISTRY)/tnozicka/openshift-acme:controller,./images/openshift-acme-controller/Dockerfile,.)
-$(call build-image,openshift-acme-exposer,$(IMAGE_REGISTRY)/tnozicka/openshift-acme:exposer, ./images/openshift-acme-exposer/Dockerfile,.)
+$(call build-image,openshift-acme-controller,$(CONTROLLER_IMAGE),./images/openshift-acme-controller/Dockerfile,.)
+$(call build-image,openshift-acme-exposer,$(EXPOSER_IMAGE), ./images/openshift-acme-exposer/Dockerfile,.)
+$(call build-image,openshift-acme-operator,$(OPERATOR_IMAGE), ./images/openshift-acme-operator/Dockerfile,.)
 
 # This will call a macro called "add-bindata" which will generate bindata specific targets based on the parameters:
 # $0 - macro name
@@ -35,41 +41,41 @@ $(call build-image,openshift-acme-exposer,$(IMAGE_REGISTRY)/tnozicka/openshift-a
 # $5 - output
 # It will generate targets {update,verify}-bindata-$(1) logically grouping them in unsuffixed versions of these targets
 # and also hooked into {update,verify}-generated for broader integration.
-$(call add-bindata,v1.0.0,./bindata/v1.0.0/...,bindata,v100_0_assets,pkg/controller/operator/v100_00_assets/bindata.go)
+$(call add-bindata,v1.0.0,./bindata/operator/target_v1.0.0/...,bindata/operator,target_v100,pkg/controller/operator/assets/target_v100/bindata.go)
 
 # $1 - target name
 # $2 - apis
 # $3 - manifests
 # $4 - output
-$(call add-crd-gen,operator,./pkg/api/operator/v1,./pkg/api/operator/v1,./pkg/api/operator/v1)
+$(call add-crd-gen,operator,./pkg/api/acme/v1,./pkg/api/acme/v1,./pkg/api/acme/v1)
 
 
 CODEGEN_PKG ?=./vendor/k8s.io/code-generator
 CODEGEN_HEADER_FILE ?=/dev/null
 CODEGEN_APIS_PACKAGE ?=$(GO_PACKAGE)/pkg/api
-CODEGEN_GROUPS_VERSIONS ?="operator/v1"
+CODEGEN_GROUPS_VERSIONS ?="acme/v1"
 define run-codegen
 	GOPATH=$(GOPATH) $(GO) run $(GO_MOD_FLAGS) "$(CODEGEN_PKG)/cmd/$(1)" --go-header-file='$(CODEGEN_HEADER_FILE)' $(2)
 
 endef
 
 define run-deepcopy-gen
-	$(call run-codegen,deepcopy-gen,--input-dirs='github.com/tnozicka/openshift-acme/pkg/api/operator/v1' --output-file-base='zz_generated.deepcopy' --bounding-dirs='github.com/tnozicka/openshift-acme/pkg/api/' $(1))
+	$(call run-codegen,deepcopy-gen,--input-dirs='github.com/tnozicka/openshift-acme/pkg/api/acme/v1' --output-file-base='zz_generated.deepcopy' --bounding-dirs='github.com/tnozicka/openshift-acme/pkg/api/' $(1))
 
 endef
 
 define run-client-gen
-	$(call run-codegen,client-gen,--clientset-name=versioned --input-base="./" --input='github.com/tnozicka/openshift-acme/pkg/api/operator/v1' --output-package='github.com/tnozicka/openshift-acme/pkg/client/operator/clientset' $(1))
+	$(call run-codegen,client-gen,--clientset-name=versioned --input-base="./" --input='github.com/tnozicka/openshift-acme/pkg/api/acme/v1' --output-package='github.com/tnozicka/openshift-acme/pkg/client/acme/clientset' $(1))
 
 endef
 
 define run-lister-gen
-	$(call run-codegen,lister-gen,--input-dirs='github.com/tnozicka/openshift-acme/pkg/api/operator/v1' --output-package='github.com/tnozicka/openshift-acme/pkg/client/operator/listers' $(1))
+	$(call run-codegen,lister-gen,--input-dirs='github.com/tnozicka/openshift-acme/pkg/api/acme/v1' --output-package='github.com/tnozicka/openshift-acme/pkg/client/acme/listers' $(1))
 
 endef
 
 define run-informer-gen
-	$(call run-codegen,informer-gen,--input-dirs='github.com/tnozicka/openshift-acme/pkg/api/operator/v1' --output-package='github.com/tnozicka/openshift-acme/pkg/client/operator/informers' --versioned-clientset-package "github.com/tnozicka/openshift-acme/pkg/client/operator/clientset/versioned" --listers-package="github.com/tnozicka/openshift-acme/pkg/client/operator/listers" $(1))
+	$(call run-codegen,informer-gen,--input-dirs='github.com/tnozicka/openshift-acme/pkg/api/acme/v1' --output-package='github.com/tnozicka/openshift-acme/pkg/client/acme/informers' --versioned-clientset-package "github.com/tnozicka/openshift-acme/pkg/client/acme/clientset/versioned" --listers-package="github.com/tnozicka/openshift-acme/pkg/client/acme/listers" $(1))
 
 endef
 
@@ -87,14 +93,24 @@ verify-codegen:
 	$(call run-informer-gen,--verify-only)
 .PHONY: verify-codegen
 
+run-render =$(GO) run ./cmd/openshift-acme-operator render target --image=$(OPERATOR_IMAGE) --namespace=$(CONTROLLER_NAMESPACE) $(1)
+define render-deploy-files
+	mkdir "$(1)"/{cluster-wide,single-namespace,specific-namespaces} 2>/dev/null || true
+	$(call run-render,--output-dir="$(1)"/cluster-wide --cluster-wide=true )
+	$(call run-render,--output-dir="$(1)"/single-namespace --cluster-wide=false )
+	$(call run-render,--output-dir="$(1)"/specific-namespaces --cluster-wide=false --additional-namespace=foo --additional-namespace=bar )
 
+endef
+
+verify-deploy-files: TMP_DIR := $(shell mktemp -d)
 verify-deploy-files:
-	hack/diff-deploy-files.sh $(shell mktemp -d)
+	$(call render-deploy-files,$(TMP_DIR))
+	set -eu; for d in $$( ls $(TMP_DIR) ); do diff -Naup "$(TMP_DIR)"/$${d} ./deploy/$${d}; done
+
 .PHONY: verify-deploy-files
 
 update-deploy-files:
-	mv ./deploy/.diffs/* $(shell mktemp -d) || true
-	hack/diff-deploy-files.sh ./deploy/.diffs
+	$(call render-deploy-files,./deploy)
 .PHONY: update-deploy-files
 
 

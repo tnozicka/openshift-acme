@@ -1,7 +1,7 @@
 # $1 - required version
 # $2 - current version
 define is_equal_or_higher_version
-$(strip $(filter $(2),$(firstword $(shell set -euo pipefail && echo -e '$(1)\n$(2)' | sort -V -r -b))))
+$(strip $(filter $(2),$(firstword $(shell set -euo pipefail && printf '%s\n%s' '$(1)' '$(2)' | sort -V -r -b))))
 endef
 
 # $1 - program name

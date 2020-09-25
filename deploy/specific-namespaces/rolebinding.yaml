@@ -1,0 +1,36 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openshift-acme
+roleRef:
+  kind: Role
+  name: openshift-acme
+subjects:
+- kind: ServiceAccount
+  name: openshift-acme
+---
+  apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: foo
+  name: openshift-acme
+roleRef:
+  kind: Role
+  namespace: foo
+  name: openshift-acme
+subjects:
+- kind: ServiceAccount
+  name: openshift-acme
+---
+  apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: bar
+  name: openshift-acme
+roleRef:
+  kind: Role
+  namespace: bar
+  name: openshift-acme
+subjects:
+- kind: ServiceAccount
+  name: openshift-acme

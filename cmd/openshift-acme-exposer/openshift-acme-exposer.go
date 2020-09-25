@@ -9,12 +9,11 @@ import (
 	"time"
 
 	routescheme "github.com/openshift/client-go/route/clientset/versioned/scheme"
+	cmd "github.com/tnozicka/openshift-acme/pkg/cmd/exposer"
+	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
-
-	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
-	cmd "github.com/tnozicka/openshift-acme/pkg/cmd/openshift-acme-exposer"
 )
 
 func init() {

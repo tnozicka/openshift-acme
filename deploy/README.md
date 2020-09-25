@@ -17,15 +17,7 @@ This deployment will provide certificate management for all namespaces in your c
 If you have this repository checked out, deploy it like: 
 
 ```bash
-oc apply -fdeploy/cluster-wide/{clusterrole,serviceaccount,issuer-letsencrypt-live,deployment}.yaml
-oc create clusterrolebinding openshift-acme --clusterrole=openshift-acme --serviceaccount="$( oc project -q ):openshift-acme" --dry-run -o yaml | oc apply -f -
-```
-
-If you want to deploy it directly from GitHub use:
-
-```bash
-oc apply -fhttps://raw.githubusercontent.com/tnozicka/openshift-acme/master/deploy/cluster-wide/{clusterrole,serviceaccount,issuer-letsencrypt-live,deployment}.yaml
-oc create clusterrolebinding openshift-acme --clusterrole=openshift-acme --serviceaccount="$( oc project -q ):openshift-acme" --dry-run -o yaml | oc apply -f -
+oc apply -fdeploy/cluster-wide/*.yaml
 ```
 
 
@@ -35,34 +27,16 @@ This deployment will provide certificate management for the namespace it's deplo
 If you have this repository checked out, deploy it like: 
 
 ```bash
-oc apply -fdeploy/single-namespace/{role,serviceaccount,issuer-letsencrypt-live,deployment}.yaml
-oc create rolebinding openshift-acme --role=openshift-acme --serviceaccount="$( oc project -q ):openshift-acme" --dry-run -o yaml | oc apply -f -
-```
-
-If you want to deploy it directly from GitHub use:
-
-```bash
-oc apply -fhttps://raw.githubusercontent.com/tnozicka/openshift-acme/master/deploy/single-namespace/{role,serviceaccount,issuer-letsencrypt-live,deployment}.yaml
-oc create rolebinding openshift-acme --role=openshift-acme --serviceaccount="$( oc project -q ):openshift-acme" --dry-run -o yaml | oc apply -f -
+oc apply -fdeploy/single-namespace/*.yaml
 ```
 
 ### Specific namespaces
-This deployment will provide certificate management for the namespace it's deployed to and explicitly specified namespaces. You have to make sure to give the SA correct permissions but you don't have to be cluster-admin. It works fine with regular user privileges.
+This deployment will provide certificate management for the namespace it's deployed to and explicitly specified namespaces. You have to make sure to give the SA correct permissions, but you don't have to be cluster-admin. It works fine with regular user privileges.
 
-To set up more namespace the deployment needs extra `--namespace=test` flag and you need to give the openshift-acme serviceaccount appropriate privileges for the extra namespace, like in the example bellow for the extra namespace `test`.   
+To set up more namespace the deployment needs extra `--namespace=test` flag and you need to create appropriate rolebinding in the additional namespace, like in the example bellow for the additional namespaces `foo` and `bar`.   
 
 If you have this repository checked out, deploy it like: 
 
 ```bash
-oc apply -fdeploy/specific-namespaces/{role,serviceaccount,issuer-letsencrypt-live,deployment}.yaml
-oc create rolebinding openshift-acme --role=openshift-acme --serviceaccount="$( oc project -q ):openshift-acme" --dry-run -o yaml | oc apply -f -
-oc create rolebinding openshift-acme --role=openshift-acme --serviceaccount="test:openshift-acme" -n "test" --dry-run -o yaml | oc apply -f -
-```
-
-If you want to deploy it directly from GitHub use:
-
-```bash
-oc apply -fhttps://raw.githubusercontent.com/tnozicka/openshift-acme/master/deploy/specific-namespaces/{role,serviceaccount,issuer-letsencrypt-live,deployment}.yaml
-oc create rolebinding openshift-acme --role=openshift-acme --serviceaccount="$( oc project -q ):openshift-acme" --dry-run -o yaml | oc apply -f -
-oc create rolebinding openshift-acme --role=openshift-acme --serviceaccount="test:openshift-acme" -n "test" --dry-run -o yaml | oc apply -f -
+oc apply -fdeploy/specific-namespaces/*.yaml
 ```
