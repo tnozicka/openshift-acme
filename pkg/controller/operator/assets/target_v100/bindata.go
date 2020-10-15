@@ -61,8 +61,8 @@ func (fi bindataFileInfo) Sys() interface{} {
 	return nil
 }
 
-var _target_v100DeploymentYamlTmpl = []byte(`kind: Deployment
-apiVersion: apps/v1
+var _target_v100DeploymentYamlTmpl = []byte(`apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: openshift-acme
   labels:
@@ -82,10 +82,10 @@ spec:
       serviceAccountName: openshift-acme
       containers:
       - name: openshift-acme
-        image: quay.io/tnozicka/openshift-acme:controller
+        image: {{ .ControllerImage }}
         imagePullPolicy: Always
         args:
-        - --exposer-image=quay.io/tnozicka/openshift-acme:exposer
+        - --exposer-image={{ .ExposerImage }}
         - --loglevel=4
 {{- if not .ClusterWide }}
         - --namespace=$(CURRENT_NAMESPACE)
@@ -115,8 +115,8 @@ func target_v100DeploymentYamlTmpl() (*asset, error) {
 	return a, nil
 }
 
-var _target_v100IssuerLetsencryptLiveYamlTmpl = []byte(`kind: ConfigMap
-apiVersion: v1
+var _target_v100IssuerLetsencryptLiveYamlTmpl = []byte(`apiVersion: v1
+kind: ConfigMap
 metadata:
   name: letsencrypt-live
   annotations:
@@ -143,12 +143,12 @@ func target_v100IssuerLetsencryptLiveYamlTmpl() (*asset, error) {
 	return a, nil
 }
 
-var _target_v100IssuerLetsencryptStagingYamlTmpl = []byte(`kind: ConfigMap
-apiVersion: v1
+var _target_v100IssuerLetsencryptStagingYamlTmpl = []byte(`apiVersion: v1
+kind: ConfigMap
 metadata:
   name: letsencrypt-staging
   annotations:
-   "acme.openshift.io/priority": "50"
+    "acme.openshift.io/priority": "50"
   labels:
     managed-by: "openshift-acme"
     type: "CertIssuer"
@@ -171,8 +171,8 @@ func target_v100IssuerLetsencryptStagingYamlTmpl() (*asset, error) {
 	return a, nil
 }
 
-var _target_v100NamespaceYamlTmpl = []byte(`kind: Namespace
-apiVersion: v1
+var _target_v100NamespaceYamlTmpl = []byte(`apiVersion: v1
+kind: Namespace
 metadata:
   name: {{ .TargetNamespace }}
 `)
@@ -197,7 +197,7 @@ kind: PodDisruptionBudget
 metadata:
   name: openshift-acme
 spec:
-  maxUnavailable: 1
+  minAvailable: 1
   selector:
     matchLabels:
       app: openshift-acme
@@ -364,8 +364,8 @@ func target_v100RolebindingYamlTmpl() (*asset, error) {
 	return a, nil
 }
 
-var _target_v100ServiceaccountYamlTmpl = []byte(`kind: ServiceAccount
-apiVersion: v1
+var _target_v100ServiceaccountYamlTmpl = []byte(`apiVersion: v1
+kind: ServiceAccount
 metadata:
   name: openshift-acme
   labels:

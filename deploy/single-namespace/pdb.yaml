@@ -3,7 +3,7 @@ kind: PodDisruptionBudget
 metadata:
   name: openshift-acme
 spec:
-  maxUnavailable: 1
+  minAvailable: 1
   selector:
     matchLabels:
       app: openshift-acme

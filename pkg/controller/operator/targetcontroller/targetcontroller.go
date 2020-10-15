@@ -11,7 +11,6 @@ import (
 
 	openshiftoperatorv1 "github.com/openshift/api/operator/v1"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
-	"github.com/tnozicka/openshift-acme/pkg/api"
 	"github.com/tnozicka/openshift-acme/pkg/assetutil"
 	acmev1clientset "github.com/tnozicka/openshift-acme/pkg/client/acme/clientset/versioned/typed/acme/v1"
 	acmev1informers "github.com/tnozicka/openshift-acme/pkg/client/acme/informers/externalversions/acme/v1"
@@ -19,6 +18,7 @@ import (
 	"github.com/tnozicka/openshift-acme/pkg/controller/operator/assets"
 	"github.com/tnozicka/openshift-acme/pkg/controller/operator/assets/target_v100"
 	kubeinformers "github.com/tnozicka/openshift-acme/pkg/machinery/informers/kube"
+	"github.com/tnozicka/openshift-acme/pkg/resourceapply"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
@@ -57,8 +57,10 @@ var (
 )
 
 type TargetController struct {
-	targetNamespace string
-	operandImage    string
+	targetNamespace        string
+	operandControllerImage string
+	operandExposerImage    string
+	stagingIssuersOnly     bool
 
 	kubeClient                 kubernetes.Interface
 	kubeInformersForNamespaces kubeinformers.Interface
@@ -75,7 +77,9 @@ type TargetController struct {
 
 func NewTargetController(
 	targetNamespace string,
-	operandImage string,
+	operandControllerImage string,
+	operandExposerImage string,
+	stagingIssuersOnly bool,
 	kubeClient kubernetes.Interface,
 	operatorClient acmev1clientset.AcmeV1Interface,
 	acmeControllerInformer acmev1informers.ACMEControllerInformer,
@@ -86,8 +90,10 @@ func NewTargetController(
 	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 
 	c := &TargetController{
-		targetNamespace: targetNamespace,
-		operandImage:    operandImage,
+		targetNamespace:        targetNamespace,
+		operandControllerImage: operandControllerImage,
+		operandExposerImage:    operandExposerImage,
+		stagingIssuersOnly:     stagingIssuersOnly,
 
 		kubeClient:                 kubeClient,
 		kubeInformersForNamespaces: kubeInformersForNamespaces,
@@ -154,7 +160,8 @@ func (c *TargetController) templateContext() *assets.Data {
 	d := &assets.Data{
 		ClusterWide:     false,
 		TargetNamespace: c.targetNamespace,
-		Image:           c.operandImage,
+		ControllerImage: c.operandControllerImage,
+		ExposerImage:    c.operandExposerImage,
 	}
 
 	for _, n := range c.kubeInformersForNamespaces.Namespaces() {
@@ -174,123 +181,73 @@ func (c *TargetController) ensureTargetNamespace(ctx context.Context) error {
 	namespace := DecodeAssetTemplateOrDie("target_v1.0.0/namespace.yaml.tmpl", c.templateContext()).(*corev1.Namespace)
 
 	namespaceLister := c.kubeInformersForNamespaces.InformersFor(corev1.NamespaceAll).Core().V1().Namespaces().Lister()
-	_, err := namespaceLister.Get(namespace.Name)
-	if err == nil {
-		return nil
-	} else if !apierrors.IsNotFound(err) {
-		return err
-	}
 
-	_, err = c.kubeClient.CoreV1().Namespaces().Create(ctx, namespace, metav1.CreateOptions{})
-	if err != nil {
-		return err
-	}
+	_, _, err := resourceapply.ApplyNamespace(ctx, c.kubeClient.CoreV1(), namespaceLister, c.recorder, namespace)
 
-	return nil
+	return err
 }
 
 func (c *TargetController) ensurePDB(ctx context.Context) error {
 	pdb := DecodeAssetTemplateOrDie("target_v1.0.0/pdb.yaml.tmpl", c.templateContext()).(*policyv1beta1.PodDisruptionBudget)
+	pdb.Namespace = c.targetNamespace
 
 	pdbLister := c.kubeInformersForNamespaces.InformersFor(c.targetNamespace).Policy().V1beta1().PodDisruptionBudgets().Lister()
-	_, err := pdbLister.PodDisruptionBudgets(c.targetNamespace).Get(pdb.Name)
-	if err == nil {
-		return nil
-	} else if !apierrors.IsNotFound(err) {
-		return err
-	}
 
-	_, err = c.kubeClient.PolicyV1beta1().PodDisruptionBudgets(c.targetNamespace).Create(ctx, pdb, metav1.CreateOptions{})
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, _, err := resourceapply.ApplyPodDisruptionBudget(ctx, c.kubeClient.PolicyV1beta1(), pdbLister, c.recorder, pdb)
+	return err
 }
 
 func (c *TargetController) ensureServiceAccount(ctx context.Context) error {
 	serviceAccount := DecodeAssetTemplateOrDie("target_v1.0.0/serviceaccount.yaml.tmpl", c.templateContext()).(*corev1.ServiceAccount)
+	serviceAccount.Namespace = c.targetNamespace
 
 	serviceAccountLister := c.kubeInformersForNamespaces.InformersFor(c.targetNamespace).Core().V1().ServiceAccounts().Lister()
-	_, err := serviceAccountLister.ServiceAccounts(c.targetNamespace).Get(serviceAccount.Name)
-	if err == nil {
-		return nil
-	} else if !apierrors.IsNotFound(err) {
-		return err
-	}
 
-	_, err = c.kubeClient.CoreV1().ServiceAccounts(c.targetNamespace).Create(ctx, serviceAccount, metav1.CreateOptions{})
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, _, err := resourceapply.ApplyServiceAccount(ctx, c.kubeClient.CoreV1(), serviceAccountLister, c.recorder, serviceAccount)
+	return err
 }
 
 func (c *TargetController) ensureClusterRole(ctx context.Context) error {
 	clusterRole := DecodeAssetTemplateOrDie("target_v1.0.0/role.yaml.tmpl", c.templateContext()).(*rbacv1.ClusterRole)
 
 	clusterRoleLister := c.kubeInformersForNamespaces.InformersFor(c.targetNamespace).Rbac().V1().ClusterRoles().Lister()
-	_, err := clusterRoleLister.Get(clusterRole.Name)
-	if err == nil {
-		return nil
-	} else if !apierrors.IsNotFound(err) {
-		return err
-	}
 
-	_, err = c.kubeClient.RbacV1().ClusterRoles().Create(ctx, clusterRole, metav1.CreateOptions{})
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, _, err := resourceapply.ApplyClusterRole(ctx, c.kubeClient.RbacV1(), clusterRoleLister, c.recorder, clusterRole)
+	return err
 }
 
 func (c *TargetController) ensureClusterRoleBinding(ctx context.Context) error {
 	clusterRoleBinding := DecodeAssetTemplateOrDie("target_v1.0.0/rolebinding.yaml.tmpl", c.templateContext()).(*rbacv1.ClusterRoleBinding)
 
 	clusterRoleBindingLister := c.kubeInformersForNamespaces.InformersFor(c.targetNamespace).Rbac().V1().ClusterRoleBindings().Lister()
-	_, err := clusterRoleBindingLister.Get(clusterRoleBinding.Name)
-	if err == nil {
-		return nil
-	} else if !apierrors.IsNotFound(err) {
-		return err
-	}
 
-	_, err = c.kubeClient.RbacV1().ClusterRoleBindings().Create(ctx, clusterRoleBinding, metav1.CreateOptions{})
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, _, err := resourceapply.ApplyClusterRoleBinding(ctx, c.kubeClient.RbacV1(), clusterRoleBindingLister, c.recorder, clusterRoleBinding)
+	return err
 }
 
 func (c *TargetController) ensureIssuer(ctx context.Context, assetName string) error {
 	issuer := DecodeAssetTemplateOrDie(assetName, c.templateContext()).(*corev1.ConfigMap)
+	issuer.Namespace = c.targetNamespace
 
 	configMapLister := c.kubeInformersForNamespaces.InformersFor(c.targetNamespace).Core().V1().ConfigMaps().Lister()
-	_, err := configMapLister.ConfigMaps(c.targetNamespace).Get(issuer.Name)
-	if err == nil {
-		return nil
-	} else if !apierrors.IsNotFound(err) {
-		return err
-	}
 
-	_, err = c.kubeClient.CoreV1().ConfigMaps(c.targetNamespace).Create(ctx, issuer, metav1.CreateOptions{})
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, _, err := resourceapply.ApplyConfigMap(ctx, c.kubeClient.CoreV1(), configMapLister, c.recorder, issuer)
+	return err
 }
 
 func (c *TargetController) ensureIssuers(ctx context.Context) error {
-	var errors []error
-
-	for _, issuerAsset := range []string{
-		"target_v1.0.0/issuer-letsencrypt-live.yaml.tmpl",
+	issuers := []string{
 		"target_v1.0.0/issuer-letsencrypt-staging.yaml.tmpl",
-	} {
+	}
+
+	if !c.stagingIssuersOnly {
+		issuers = append(issuers, []string{
+			"target_v1.0.0/issuer-letsencrypt-live.yaml.tmpl",
+		}...)
+	}
+
+	var errors []error
+	for _, issuerAsset := range issuers {
 		errors = append(errors, c.ensureIssuer(ctx, issuerAsset))
 	}
 
@@ -299,44 +256,12 @@ func (c *TargetController) ensureIssuers(ctx context.Context) error {
 
 func (c *TargetController) manageDeployment(ctx context.Context) (*appsv1.Deployment, error) {
 	deployment := DecodeAssetTemplateOrDie("target_v1.0.0/deployment.yaml.tmpl", c.templateContext()).(*appsv1.Deployment)
-	if deployment.Annotations == nil {
-		deployment.Annotations = map[string]string{}
-	}
-
-	// TODO: substitute images, args, ...
-
-	deployment.Annotations[api.ManagedDataHash] = HashObjectsOrDie(deployment)
+	deployment.Namespace = c.targetNamespace
 
 	deploymentLister := c.kubeInformersForNamespaces.InformersFor(c.targetNamespace).Apps().V1().Deployments().Lister()
-	existingDeployment, err := deploymentLister.Deployments(c.targetNamespace).Get(deployment.Name)
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return nil, err
-		}
 
-		klog.V(2).Infof("Creating deployment %s/%s because it is missing.", c.targetNamespace, deployment.Name)
-		// TODO: add expectations to avoid stale caches (AlreadyExistsError)
-		deployment, err := c.kubeClient.AppsV1().Deployments(c.targetNamespace).Create(ctx, deployment, metav1.CreateOptions{})
-		if err != nil {
-			return nil, err
-		}
-
-		return deployment, nil
-	}
-
-	existingHash, ok := existingDeployment.Annotations[api.ManagedDataHash]
-	if ok && existingHash == deployment.Annotations[api.ManagedDataHash] {
-		return existingDeployment, nil
-	}
-
-	klog.V(2).Infof("Updating deployment %s/%s because it changed. New hash %q differs from current hash %q.", c.targetNamespace, deployment.Name, deployment.Annotations[api.ManagedDataHash], existingHash)
-	deployment.ResourceVersion = existingDeployment.ResourceVersion
-	deployment, err = c.kubeClient.AppsV1().Deployments(c.targetNamespace).Update(ctx, deployment, metav1.UpdateOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return deployment, nil
+	actual, _, err := resourceapply.ApplyDeployment(ctx, c.kubeClient.AppsV1(), deploymentLister, c.recorder, deployment)
+	return actual, err
 }
 
 func (c *TargetController) sync(ctx context.Context) error {

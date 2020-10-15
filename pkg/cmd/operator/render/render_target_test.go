@@ -10,11 +10,13 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/tnozicka/openshift-acme/pkg/cmd/genericclioptions"
+	"github.com/tnozicka/openshift-acme/pkg/controller/operator/assets"
 	apierrors "k8s.io/apimachinery/pkg/util/errors"
 )
 
 var (
-	image           = "quay.io/tnozicka/openshift-acme:controller"
+	controllerImage = "quay.io/tnozicka/openshift-acme:controller"
+	exposerImage    = "quay.io/tnozicka/openshift-acme:exposer"
 	targetNamespace = "acme-controller"
 )
 
@@ -27,10 +29,11 @@ func TestTargetOptionsValidate(t *testing.T) {
 		{
 			name: "valid config",
 			options: TargetOptions{
-				FlagInputs: FlagInputs{
+				Data: assets.Data{
 					AdditionalNamespaces: nil,
 					TargetNamespace:      targetNamespace,
-					Image:                image,
+					ControllerImage:      controllerImage,
+					ExposerImage:         exposerImage,
 					ClusterWide:          true,
 				},
 			},
@@ -39,25 +42,28 @@ func TestTargetOptionsValidate(t *testing.T) {
 		{
 			name: "required fields",
 			options: TargetOptions{
-				FlagInputs: FlagInputs{
+				Data: assets.Data{
 					AdditionalNamespaces: nil,
 					TargetNamespace:      "",
-					Image:                "",
+					ControllerImage:      "",
+					ExposerImage:         "",
 					ClusterWide:          true,
 				},
 			},
 			expectedErr: apierrors.NewAggregate([]error{
-				errors.New("image can't be empty"),
+				errors.New("controller image can't be empty"),
+				errors.New("exposer image can't be empty"),
 				errors.New("controller namespace can't be empty"),
 			}),
 		},
 		{
 			name: "AdditionalNamespaces conflict with ClusterWide",
 			options: TargetOptions{
-				FlagInputs: FlagInputs{
+				Data: assets.Data{
 					AdditionalNamespaces: []string{"test"},
 					TargetNamespace:      targetNamespace,
-					Image:                image,
+					ControllerImage:      controllerImage,
+					ExposerImage:         exposerImage,
 					ClusterWide:          true,
 				},
 			},
@@ -82,6 +88,8 @@ func TestTargetOptionsValidate(t *testing.T) {
 func TestTargetOptionsRun(t *testing.T) {
 	commonFiles := []string{
 		"deployment.yaml",
+		"issuer-letsencrypt-live.yaml",
+		"issuer-letsencrypt-staging.yaml",
 		"namespace.yaml",
 		"role.yaml",
 		"rolebinding.yaml",
@@ -96,10 +104,11 @@ func TestTargetOptionsRun(t *testing.T) {
 		{
 			name: "cluster wide",
 			options: TargetOptions{
-				FlagInputs: FlagInputs{
+				Data: assets.Data{
 					AdditionalNamespaces: nil,
 					TargetNamespace:      targetNamespace,
-					Image:                image,
+					ControllerImage:      controllerImage,
+					ExposerImage:         exposerImage,
 					ClusterWide:          true,
 				},
 			},
@@ -108,10 +117,11 @@ func TestTargetOptionsRun(t *testing.T) {
 		{
 			name: "single namespace",
 			options: TargetOptions{
-				FlagInputs: FlagInputs{
+				Data: assets.Data{
 					AdditionalNamespaces: nil,
 					TargetNamespace:      targetNamespace,
-					Image:                image,
+					ControllerImage:      controllerImage,
+					ExposerImage:         exposerImage,
 					ClusterWide:          false,
 				},
 			},
@@ -120,10 +130,11 @@ func TestTargetOptionsRun(t *testing.T) {
 		{
 			name: "specific namespaces",
 			options: TargetOptions{
-				FlagInputs: FlagInputs{
+				Data: assets.Data{
 					AdditionalNamespaces: []string{"test"},
 					TargetNamespace:      targetNamespace,
-					Image:                image,
+					ControllerImage:      controllerImage,
+					ExposerImage:         exposerImage,
 					ClusterWide:          false,
 				},
 			},

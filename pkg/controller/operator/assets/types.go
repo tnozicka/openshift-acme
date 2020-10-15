@@ -1,7 +1,8 @@
 package assets
 
 type Data struct {
-	Image                string
+	ControllerImage      string
+	ExposerImage         string
 	TargetNamespace      string
 	ClusterWide          bool
 	AdditionalNamespaces []string

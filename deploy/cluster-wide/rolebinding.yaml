@@ -3,8 +3,9 @@ kind: ClusterRoleBinding
 metadata:
   name: openshift-acme
 roleRef:
-  kind: Role
+  kind: ClusterRole
   name: openshift-acme
 subjects:
 - kind: ServiceAccount
+  namespace: acme-controller
   name: openshift-acme

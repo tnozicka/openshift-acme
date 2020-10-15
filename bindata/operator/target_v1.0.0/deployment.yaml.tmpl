@@ -1,5 +1,5 @@
-kind: Deployment
 apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: openshift-acme
   labels:
@@ -19,10 +19,10 @@ spec:
       serviceAccountName: openshift-acme
       containers:
       - name: openshift-acme
-        image: quay.io/tnozicka/openshift-acme:controller
+        image: {{ .ControllerImage }}
         imagePullPolicy: Always
         args:
-        - --exposer-image=quay.io/tnozicka/openshift-acme:exposer
+        - --exposer-image={{ .ExposerImage }}
         - --loglevel=4
 {{- if not .ClusterWide }}
         - --namespace=$(CURRENT_NAMESPACE)

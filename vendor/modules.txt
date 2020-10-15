@@ -11,6 +11,8 @@ github.com/davecgh/go-spew/spew
 # github.com/emicklei/go-restful v2.9.5+incompatible
 github.com/emicklei/go-restful
 github.com/emicklei/go-restful/log
+# github.com/evanphx/json-patch v4.9.0+incompatible
+github.com/evanphx/json-patch
 # github.com/fatih/color v1.7.0
 github.com/fatih/color
 # github.com/ghodss/yaml v1.0.0
@@ -152,7 +154,10 @@ github.com/openshift/client-go/user/clientset/versioned
 github.com/openshift/client-go/user/clientset/versioned/scheme
 github.com/openshift/client-go/user/clientset/versioned/typed/user/v1
 # github.com/openshift/library-go v0.0.0-20200902171820-35f48b6ef30c
+github.com/openshift/library-go/pkg/operator/resource/resourcemerge
 github.com/openshift/library-go/pkg/operator/v1helpers
+# github.com/pkg/errors v0.9.1
+github.com/pkg/errors
 # github.com/prometheus/client_golang v1.7.1
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/prometheus/internal
@@ -384,6 +389,7 @@ k8s.io/apimachinery/third_party/forked/golang/reflect
 k8s.io/apiserver/pkg/storage/names
 # k8s.io/client-go v0.19.0
 k8s.io/client-go/discovery
+k8s.io/client-go/discovery/fake
 k8s.io/client-go/informers
 k8s.io/client-go/informers/admissionregistration
 k8s.io/client-go/informers/admissionregistration/v1
@@ -528,6 +534,7 @@ k8s.io/client-go/pkg/version
 k8s.io/client-go/plugin/pkg/client/auth/exec
 k8s.io/client-go/rest
 k8s.io/client-go/rest/watch
+k8s.io/client-go/testing
 k8s.io/client-go/tools/auth
 k8s.io/client-go/tools/cache
 k8s.io/client-go/tools/clientcmd

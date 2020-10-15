@@ -71,7 +71,8 @@ func NewTargetCommand(streams genericclioptions.IOStreams) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&o.OutputDir, "output-dir", "", o.OutputDir, "Directory for writing the manifests.")
-	cmd.Flags().StringVarP(&o.Image, "image", "", o.Image, "Target image.")
+	cmd.Flags().StringVarP(&o.ControllerImage, "controller-image", "", o.ControllerImage, "Target controller image.")
+	cmd.Flags().StringVarP(&o.ExposerImage, "exposer-image", "", o.ExposerImage, "Target exposer image.")
 	cmd.Flags().StringVarP(&o.TargetNamespace, "namespace", "", o.TargetNamespace, "Controller namespace.")
 	cmd.Flags().BoolVarP(&o.ClusterWide, "cluster-wide", "", o.ClusterWide, "ClusterWide determines if this should be cluster wide deployment or localized to specific namespaces.")
 	cmd.Flags().StringArrayVarP(&o.AdditionalNamespaces, "additional-namespace", "", o.AdditionalNamespaces, "Additional namespaces the controller should manage.")
@@ -82,8 +83,12 @@ func NewTargetCommand(streams genericclioptions.IOStreams) *cobra.Command {
 func (o *TargetOptions) Validate() error {
 	var errs []error
 
-	if len(o.Image) == 0 {
-		errs = append(errs, errors.New("image can't be empty"))
+	if len(o.ControllerImage) == 0 {
+		errs = append(errs, errors.New("controller image can't be empty"))
+	}
+
+	if len(o.ControllerImage) == 0 {
+		errs = append(errs, errors.New("exposer image can't be empty"))
 	}
 
 	if len(o.TargetNamespace) == 0 {

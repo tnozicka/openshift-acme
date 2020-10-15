@@ -93,7 +93,7 @@ verify-codegen:
 	$(call run-informer-gen,--verify-only)
 .PHONY: verify-codegen
 
-run-render =$(GO) run ./cmd/openshift-acme-operator render target --image=$(OPERATOR_IMAGE) --namespace=$(CONTROLLER_NAMESPACE) $(1)
+run-render =$(GO) run ./cmd/openshift-acme-operator render target --controller-image=$(CONTROLLER_IMAGE) --exposer-image=$(EXPOSER_IMAGE) --namespace=$(CONTROLLER_NAMESPACE) $(1)
 define render-deploy-files
 	mkdir "$(1)"/{cluster-wide,single-namespace,specific-namespaces} 2>/dev/null || true
 	$(call run-render,--output-dir="$(1)"/cluster-wide --cluster-wide=true )

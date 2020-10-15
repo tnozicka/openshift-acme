@@ -2,6 +2,7 @@ package operator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -32,15 +33,20 @@ type RunOptions struct {
 	routeClient    routeclientset.Interface
 	operatorClient operatorclientset.Interface
 
-	OperandNamespace string
-	OperandImage     string
+	OperandNamespace       string
+	OperandControllerImage string
+	OperandExposerImage    string
+
+	StagingIssuersOnly bool
 }
 
 func NewRunOptions(streams genericclioptions.IOStreams) *RunOptions {
 	return &RunOptions{
-		LeaderElection:   genericclioptions.NewLeaderElection(),
-		OperandNamespace: "",
-		OperandImage:     "",
+		LeaderElection:         genericclioptions.NewLeaderElection(),
+		OperandNamespace:       "",
+		OperandControllerImage: "",
+		OperandExposerImage:    "",
+		StagingIssuersOnly:     false,
 	}
 }
 
@@ -81,7 +87,9 @@ func NewRunCommand(streams genericclioptions.IOStreams) *cobra.Command {
 	o.InClusterReflection.AddFlags(cmd)
 
 	cmd.Flags().StringVarP(&o.OperandNamespace, "operand-namespace", "", o.OperandNamespace, "Namespace for deploying the controller.")
-	cmd.Flags().StringVarP(&o.OperandImage, "operand-image", "", o.OperandImage, "Controller image.")
+	cmd.Flags().StringVarP(&o.OperandControllerImage, "operand-controller-image", "", o.OperandControllerImage, "Controller image.")
+	cmd.Flags().StringVarP(&o.OperandExposerImage, "operand-exposer-image", "", o.OperandExposerImage, "Exposer image.")
+	cmd.Flags().BoolVarP(&o.StagingIssuersOnly, "staging-issuers-only", "", o.StagingIssuersOnly, "Create only staging issuers.")
 
 	return cmd
 }
@@ -94,7 +102,15 @@ func (o *RunOptions) Validate() error {
 	errs = append(errs, o.InClusterReflection.Validate())
 
 	if len(o.OperandNamespace) == 0 {
-		return fmt.Errorf("operand namespace not specified")
+		errs = append(errs, errors.New("operand namespace not specified"))
+	}
+
+	if len(o.OperandControllerImage) == 0 {
+		errs = append(errs, errors.New("operand controller image can't be empty"))
+	}
+
+	if len(o.OperandExposerImage) == 0 {
+		errs = append(errs, errors.New("operand exposer image can't be empty"))
 	}
 
 	return apierrors.NewAggregate(errs)
@@ -169,7 +185,9 @@ func (o *RunOptions) run(ctx context.Context, streams genericclioptions.IOStream
 
 	tcc := targetcontroller.NewTargetController(
 		o.OperandNamespace,
-		o.OperandImage,
+		o.OperandControllerImage,
+		o.OperandExposerImage,
+		o.StagingIssuersOnly,
 		o.kubeClient,
 		o.operatorClient.AcmeV1(),
 		operatorInformers.Acme().V1().ACMEControllers(),
