@@ -1,11 +1,9 @@
 apiVersion: rbac.authorization.k8s.io/v1
-{{ if not .clusterWide }}
 kind: ClusterRoleBinding
-{{ end }}
 metadata:
   name: openshift-acme-operator
 roleRef:
-  kind: Role
+  kind: ClusterRole
   name: openshift-acme-operator
 subjects:
 - kind: ServiceAccount
