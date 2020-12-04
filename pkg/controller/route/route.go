@@ -691,10 +691,17 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 			switch challenge.Status {
 			case acme.StatusPending:
-				id := getID(routeReadOnly.Name, order.URI, authzURL, challenge.URI)
+				challengePath := acmeClient.HTTP01ChallengePath(challenge.Token)
+
+				id := strings.Join(
+					[]string{
+						routeReadOnly.Spec.Host,
+						challengePath,
+					},
+					":",
+				)
 				tmpName := getTemporaryName(id)
 
-				challengePath := acmeClient.HTTP01ChallengePath(challenge.Token)
 				challengeResponse, err := acmeClient.HTTP01ChallengeResponse(challenge.Token)
 				if err != nil {
 					return err
@@ -1374,10 +1381,6 @@ func (rc *RouteController) Run(ctx context.Context, workers int) {
 func getTemporaryName(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return fmt.Sprintf("exposer-%s", strings.ToLower(base32.HexEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:])))
-}
-
-func getID(routeName, orderURI, authzURL, challengeURI string) string {
-	return routeName + ":" + orderURI + ":" + authzURL + ":" + challengeURI
 }
 
 func setStatus(obj *metav1.ObjectMeta, status *api.Status) error {
