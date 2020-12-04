@@ -3,7 +3,7 @@ kind: PodDisruptionBudget
 metadata:
   name: openshift-acme-operator
 spec:
-  maxUnavailable: 1
+  minAnavailable: 1
   selector:
     matchLabels:
       app: openshift-acme-operator
