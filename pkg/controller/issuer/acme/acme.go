@@ -252,7 +252,7 @@ func (ac *AccountController) deleteSecret(obj interface{}) {
 		certIssuer := &api.CertIssuer{}
 		err := yaml.Unmarshal([]byte(certIssuerData), certIssuer)
 		if err != nil {
-			klog.Warningf("ConfigMap %s/%s is matching CertIssuer selectors %q but contains invalid object: %w", cm.Namespace, cm.Name, api.AccountLabelSet, err)
+			klog.Warningf("ConfigMap %s/%s is matching CertIssuer selectors %q but contains invalid object: %v", cm.Namespace, cm.Name, api.AccountLabelSet, err)
 			continue
 		}
 
