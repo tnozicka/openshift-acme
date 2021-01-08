@@ -13,6 +13,9 @@ CONTROLLER_IMAGE :=$(IMAGE_REF):controller
 EXPOSER_IMAGE :=$(IMAGE_REF):exposer
 OPERATOR_IMAGE :=$(IMAGE_REF):operator
 
+YQ :=$(GO) run github.com/mikefarah/yq
+OLM_CSV_FILES :=$(wildcard deploy/olm/*/*.clusterserviceversion.yaml)
+
 # Include the library makefile
 include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 	golang.mk \
@@ -113,11 +116,30 @@ update-deploy-files:
 	$(call render-deploy-files,./deploy)
 .PHONY: update-deploy-files
 
+define run-olm-csv-injection
+	$(YQ) ea '\
+select(fi==0).spec.install.spec.deployment.name = select(fi==1).metadata.name | \
+select(fi==0).spec.install.spec.deployment.spec = select(fi==1).spec | \
+( ( select(fi==0).spec.install.spec.deployment.spec.template.spec.containers[0].env[] | select(.name == "ACME_CONTROLLER_IMAGE") ).value = ( select(fi=0).spec.relatedImages[] | select(.name == "acme-controller") ).image ) | select(fileIndex == 0)' \
+deploy/olm/0.9/acme-operator.clusterserviceversion.yaml deploy/operator/50_deployment.yaml
 
-verify: verify-deploy-files verify-codegen
+
+endef
+
+verify-olm: TMP_DIR := $(shell mktemp -d)
+verify-olm:
+#	$(call run-olm-csv-injection,$(TMP_DIR))
+#	set -eu; for d in $$( ls $(TMP_DIR) ); do diff -Naup "$(TMP_DIR)"/$${d} ./deploy/$${d}; done
+.PHONY: verify-olm
+
+update-olm:
+	$(for f,$(OLM_CSV_FILES),$(call run-olm-csv-injection,$(f)))
+.PHONY: update-olm
+
+verify: verify-deploy-files verify-codegen verify-olm
 .PHONY: verify
 
-update: update-deploy-files update-codegen
+update: update-deploy-files update-codegen update-olm
 .PHONY: update
 
 test-e2e: export E2E_DOMAIN ?=$(shell oc get ingresses.config.openshift.io cluster --template='{{.spec.domain}}')

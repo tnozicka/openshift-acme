@@ -1,0 +1,52 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  name: acme-operator.v0.9.0
+  capabilities: Full Lifecycle
+  annotations:
+    operators.openshift.io/infrastructure-features: '["Disconnected"]'
+spec:
+  displayName: openshift-acme
+  description: An operator to run openshift-acme controller.
+  keywords:
+  - acme
+  - openshift-acme
+  - letsencrypt
+  - certificate
+  - certificates
+  provider:
+    name: Tomas Nozicka
+  labels:
+    olm-owner-enterprise-app: acme-operator
+    olm-status-descriptors: acme-operator.v0.9.0
+  links:
+  - https://github.com/tnozicka/openshift-acme
+  version: 0.9.0
+  maturity: alpha
+  icon: null
+  customresourcedefinitions:
+    owned:
+    - kind: ACMEController
+      name: acmecontrollers.acme.openshift.io
+      version: v1
+  relatedImages:
+  - name: acme-controller
+    image: quay.io/tnozicka/openshift-acme@sha256:6ed0f4b6bb8e92bea4c3c0b9153da659d0e26c7925776780e02c7d2037e068eb
+  - name: acme-exposer
+    image: quay.io/tnozicka/openshift-acme@sha256:6ed0f4b6bb8e92bea4c3c0b9153da659d0e26c7925776780e02c7d2037e068eb
+  - name: acme-operator
+    image: quay.io/tnozicka/oa@sha256:18d27a8eaa0920b576ca8c5d3d0d47c97b9a1f566b9d39828660dff9e9f83ac1
+  install:
+    strategy: deployment
+    spec:
+      deployment:
+       name: "aa"
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
