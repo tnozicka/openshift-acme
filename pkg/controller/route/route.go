@@ -600,6 +600,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 	acmeClient := &acme.Client{
 		DirectoryURL: acmeIssuer.DirectoryURL,
 		UserAgent:    "github.com/tnozicka/openshift-acme",
+
 	}
 	klog.V(4).Infof("Using ACME client with DirectoryURL %q", acmeClient.DirectoryURL)
 

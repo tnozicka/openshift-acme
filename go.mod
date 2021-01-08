@@ -16,7 +16,7 @@ require (
 	github.com/prometheus/client_golang v1.7.1
 	github.com/spf13/cobra v1.0.0
 	github.com/spf13/pflag v1.0.5
-	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
+	golang.org/x/crypto v0.0.0-20201217014255-9d1352758620
 	gopkg.in/inf.v0 v0.9.1
 	k8s.io/api v0.19.0
 	k8s.io/apimachinery v0.19.0

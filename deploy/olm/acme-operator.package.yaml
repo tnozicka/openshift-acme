@@ -1,0 +1,4 @@
+packageName: acme-operator
+channels:
+- name: "0.8"
+  currentCSV: acme-operator.v0.8.0

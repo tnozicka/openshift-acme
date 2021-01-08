@@ -21,8 +21,13 @@ spec:
       - name: openshift-acme-operator
         image: quay.io/tnozicka/openshift-acme:operator
         imagePullPolicy: Always
+        env:
+        - name: ACME_CONTROLLER_IMAGE
+          value: quay.io/tnozicka/openshift-acme:controller
+        - name: ACME_EXPOSER_IMAGE
+          value: quay.io/tnozicka/openshift-acme:exposer
         args:
         - --loglevel=2
         - --operand-namespace=acme-controller
-        - --operand-controller-image=quay.io/tnozicka/openshift-acme:controller
-        - --operand-exposer-image=quay.io/tnozicka/openshift-acme:exposer
+        - --operand-controller-image=$(ACME_CONTROLLER_IMAGE)
+        - --operand-exposer-image=$(ACME_EXPOSER_IMAGE)
