@@ -77,6 +77,7 @@ type RouteController struct {
 	certDefaultRSAKeyBitSize int
 	exposerImage             string
 	controllerNamespace      string
+	certCache                map[string]*routev1.TLSConfig
 
 	kubeClient                 kubernetes.Interface
 	kubeInformersForNamespaces kubeinformers.Interface
@@ -126,6 +127,8 @@ func NewRouteController(
 
 		queue:                workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		routesToSecretsQueue: workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+
+		certCache: make(map[string]*routev1.TLSConfig),
 	}
 
 	if len(routeInformersForNamespaces.Namespaces()) < 1 {
@@ -392,17 +395,24 @@ func needsCertKey(t time.Time, route *routev1.Route) (string, error) {
 	if route.Spec.TLS == nil || route.Spec.TLS.Key == "" || route.Spec.TLS.Certificate == "" {
 		return "Route is missing CertKey", nil
 	}
+	reason, err := certNeedsRenew(t, route.Spec.Host, route.Spec.TLS)
+	if err != nil {
+		return "", fmt.Errorf("can't check cert from Route %s/%s: %v", route.Namespace, route.Name, err)
+	}
+	return reason, nil
+}
 
+func certNeedsRenew(t time.Time, hostname string, tls *routev1.TLSConfig) (string, error) {
 	certPemData := &cert.CertPemData{
-		Key: []byte(route.Spec.TLS.Key),
-		Crt: []byte(route.Spec.TLS.Certificate),
+		Key: []byte(tls.Key),
+		Crt: []byte(tls.Certificate),
 	}
 	certificate, err := certPemData.Certificate()
 	if err != nil {
-		return "", fmt.Errorf("can't decode certificate from Route %s/%s: %v", route.Namespace, route.Name, err)
+		return "", fmt.Errorf("can't decode certificate from TLS config: %v", err)
 	}
 
-	err = certificate.VerifyHostname(route.Spec.Host)
+	err = certificate.VerifyHostname(hostname)
 	if err != nil {
 		klog.V(5).Info(err)
 		return "Existing certificate doesn't match hostname", nil
@@ -434,7 +444,6 @@ func needsCertKey(t time.Time, route *routev1.Route) (string, error) {
 			return "Proactive renewal", nil
 		}
 	}
-
 	return "", nil
 }
 
@@ -561,6 +570,35 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 	}
 
 	klog.V(2).Infof("Route %q needs new certificate: %v", key, reason)
+
+	// Check if we have a valid certificate for this hostname already and use it instead of ordering a new one
+	if (routeReadOnly.Spec.TLS == nil || routeReadOnly.Spec.TLS.Key == "" || routeReadOnly.Spec.TLS.Certificate == "") && rc.certCache[routeReadOnly.Spec.Host] != nil {
+		reason, err := certNeedsRenew(time.Now(), routeReadOnly.Spec.Host, rc.certCache[routeReadOnly.Spec.Host])
+		if err != nil {
+			return fmt.Errorf("Can't check cached certificate validity for hostname %s: %w", routeReadOnly.Spec.Host, err)
+		}
+		if reason == "" {
+			klog.V(4).Infof("Using certificate from cache for route %q", key)
+			route := routeReadOnly.DeepCopy()
+			err = setStatus(&route.ObjectMeta, status)
+			if err != nil {
+				return err
+			}
+
+			if route.Spec.TLS == nil {
+				route.Spec.TLS = rc.certCache[route.Spec.Host]
+			}
+			if route.Spec.TLS.Key == "" || route.Spec.TLS.Certificate == "" {
+				route.Spec.TLS.Key = rc.certCache[route.Spec.Host].Key
+				route.Spec.TLS.Certificate = rc.certCache[route.Spec.Host].Certificate
+
+			}
+			_, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Update(route)
+			return err
+		}
+		klog.V(4).Infof("Cached certificate for hostname %s invalid. Removing from cache", routeReadOnly.Spec.Host)
+		rc.certCache[routeReadOnly.Spec.Host] = nil
+	}
 
 	// We need new cert, clean the previous order if present
 	switch status.ProvisioningStatus.OrderStatus {
@@ -1118,6 +1156,7 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		}
 		route.Spec.TLS.Key = string(certPemData.Key)
 		route.Spec.TLS.Certificate = string(certPemData.Crt)
+		rc.certCache[route.Spec.Host] = route.Spec.TLS
 
 		// TODO: consider RetryOnConflict with rechecking the managed annotation
 		_, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Update(route)
