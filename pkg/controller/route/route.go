@@ -719,8 +719,8 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 				desiredExposerRoute.ResourceVersion = ""
 				desiredExposerRoute.OwnerReferences = []metav1.OwnerReference{
 					{
-						APIVersion: routev1.SchemeGroupVersion.String(),
-						Kind:       "Route",
+						APIVersion: controllerKind.GroupVersion().String(),
+						Kind:       controllerKind.Kind,
 						Name:       routeReadOnly.Name,
 						UID:        routeReadOnly.UID,
 						Controller: &trueVal,
@@ -776,8 +776,8 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 				}
 
 				ownerRefToExposerRoute := metav1.OwnerReference{
-					APIVersion: corev1.SchemeGroupVersion.String(),
-					Kind:       "Route",
+					APIVersion: controllerKind.GroupVersion().String(),
+					Kind:       controllerKind.Kind,
 					Name:       exposerRoute.Name,
 					UID:        exposerRoute.UID,
 					Controller: &trueVal,
