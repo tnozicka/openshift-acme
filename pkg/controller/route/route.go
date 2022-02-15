@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base32"
+	"encoding/pem"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -1077,7 +1078,12 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		}
 
 		route := routeReadOnly.DeepCopy()
-		route.Spec.TLS.Key = string(x509.MarshalPKCS1PrivateKey(privateKey))
+		route.Spec.TLS.Key = string(pem.EncodeToMemory(
+			&pem.Block{
+				Type: "RSA PRIVATE KEY",
+				Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+			},
+		))
 		_, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Update(route)
 		if err != nil {
 			return fmt.Errorf("can't update route %s/%s with new private key: %v", routeReadOnly.Namespace, route.Name, err)
@@ -1146,9 +1152,10 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 
 		klog.V(4).Infof("Route %q: Order %q: Certificate available at %q", key, order.URI, order.CertURL)
 
-		privateKey, err := x509.ParsePKCS1PrivateKey([]byte(routeReadOnly.Spec.TLS.Key))
+		pkBlock, _ := pem.Decode([]byte(routeReadOnly.Spec.TLS.Key))
+		privateKey, err := x509.ParsePKCS1PrivateKey(pkBlock.Bytes)
 		if err != nil {
-			return fmt.Errorf("can't find private key for cert: %w", err)
+			return fmt.Errorf("can't decode private key for cert: %w", err)
 		}
 
 		der, err := acmeClient.FetchCert(ctx, order.CertURL, true)
