@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base32"
+	"encoding/pem"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -1076,6 +1077,28 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 			return fmt.Errorf("failed to generate RSA key: %v", err)
 		}
 
+		route := routeReadOnly.DeepCopy()
+
+		if route.Spec.TLS == nil {
+			route.Spec.TLS = &routev1.TLSConfig{
+				// Defaults
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+				Termination:                   routev1.TLSTerminationEdge,
+			}
+		}
+
+		route.Spec.TLS.Key = string(pem.EncodeToMemory(
+			&pem.Block{
+				Type: "RSA PRIVATE KEY",
+				Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+			},
+		))
+
+		_, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Update(route)
+		if err != nil {
+			return fmt.Errorf("can't update route %s/%s with new private key: %v", routeReadOnly.Namespace, route.Name, err)
+		}
+
 		csr, err := x509.CreateCertificateRequest(cryptorand.Reader, &template, privateKey)
 		if err != nil {
 			return fmt.Errorf("failed to create certificate request: %v", err)
@@ -1090,6 +1113,61 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		}
 
 		klog.V(4).Infof("Route %q: Order %q: Certificate available at %q", key, order.URI, certUrl)
+
+		certPemData, err := cert.NewCertificateFromDER(der, privateKey)
+		if err != nil {
+			return fmt.Errorf("can't convert certificate from DER to PEM: %v", err)
+		}
+
+		// unfortunatly golang acmeClient.CreateOrderCert waits internally for transitioning state
+		// to valid and we need to reflect it in our state machine because we don't get back
+		// into the provisioning phase again after the certs are updated and valid.
+		status.ProvisioningStatus.OrderStatus = acme.StatusValid
+
+		// We are updating the route and to avoid conflicts later we will also update the status together
+		err = setStatus(&route.ObjectMeta, status)
+		if err != nil {
+			return fmt.Errorf("can't set status: %w", err)
+		}
+
+		objReadOnlyModified, _, _ := rc.routeInformersForNamespaces.InformersForOrGlobal(namespace).Route().V1().Routes().Informer().GetIndexer().GetByKey(key)
+		routeReadOnlyModified := objReadOnlyModified.(*routev1.Route)
+		routeModified := routeReadOnlyModified.DeepCopy()
+		routeModified.Spec.TLS.Key = string(certPemData.Key)
+		routeModified.Spec.TLS.Certificate = string(certPemData.Crt)
+
+		// TODO: consider RetryOnConflict with rechecking the managed annotation
+		_, err = rc.routeClient.RouteV1().Routes(routeReadOnlyModified.Namespace).Update(routeModified)
+		if err != nil {
+			return fmt.Errorf("can't update route %s/%s with new certificates: %v", routeReadOnly.Namespace, route.Name, err)
+		}
+
+		err = rc.CleanupExposerObjects(routeReadOnly)
+		if err != nil {
+			klog.Errorf("Can't cleanup exposer objects: %v", err)
+		}
+
+		// We have already updated the status when updating the Route.
+		return nil
+
+	case acme.StatusValid:
+		// TODO: fix the golang acme lib
+		// Unfortunately the golang acme lib actively waits in 'CreateOrderCert'
+		// so we can't take the appropriate asynchronous action here.
+		// The logic is included in handling acme.StatusReady
+
+		klog.V(4).Infof("Route %q: Order %q: Certificate available at %q", key, order.URI, order.CertURL)
+
+		pkBlock, _ := pem.Decode([]byte(routeReadOnly.Spec.TLS.Key))
+		privateKey, err := x509.ParsePKCS1PrivateKey(pkBlock.Bytes)
+		if err != nil {
+			return fmt.Errorf("can't decode private key for cert: %w", err)
+		}
+
+		der, err := acmeClient.FetchCert(ctx, order.CertURL, true)
+		if err != nil {
+			return fmt.Errorf("can't fetch cert: %w", err)
+		}
 
 		certPemData, err := cert.NewCertificateFromDER(der, privateKey)
 		if err != nil {
@@ -1131,13 +1209,6 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		}
 
 		// We have already updated the status when updating the Route.
-		return nil
-
-	case acme.StatusValid:
-		// TODO: fix the golang acme lib
-		// Unfortunately the golang acme lib actively waits in 'CreateOrderCert'
-		// so we can't take the appropriate asynchronous action here.
-		// The logic is included in handling acme.StatusReady
 		return nil
 
 	case acme.StatusInvalid:
