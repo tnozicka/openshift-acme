@@ -1130,11 +1130,14 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 			return fmt.Errorf("can't set status: %w", err)
 		}
 
-		route.Spec.TLS.Key = string(certPemData.Key)
-		route.Spec.TLS.Certificate = string(certPemData.Crt)
+		objReadOnlyModified, _, _ := rc.routeInformersForNamespaces.InformersForOrGlobal(namespace).Route().V1().Routes().Informer().GetIndexer().GetByKey(key)
+		routeReadOnlyModified := objReadOnlyModified.(*routev1.Route)
+		routeModified := routeReadOnlyModified.DeepCopy()
+		routeModified.Spec.TLS.Key = string(certPemData.Key)
+		routeModified.Spec.TLS.Certificate = string(certPemData.Crt)
 
 		// TODO: consider RetryOnConflict with rechecking the managed annotation
-		_, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Update(route)
+		_, err = rc.routeClient.RouteV1().Routes(routeReadOnlyModified.Namespace).Update(routeModified)
 		if err != nil {
 			return fmt.Errorf("can't update route %s/%s with new certificates: %v", routeReadOnly.Namespace, route.Name, err)
 		}
