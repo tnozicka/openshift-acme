@@ -1078,12 +1078,22 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 		}
 
 		route := routeReadOnly.DeepCopy()
+
+		if route.Spec.TLS == nil {
+			route.Spec.TLS = &routev1.TLSConfig{
+				// Defaults
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+				Termination:                   routev1.TLSTerminationEdge,
+			}
+		}
+
 		route.Spec.TLS.Key = string(pem.EncodeToMemory(
 			&pem.Block{
 				Type: "RSA PRIVATE KEY",
 				Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 			},
 		))
+
 		_, err = rc.routeClient.RouteV1().Routes(routeReadOnly.Namespace).Update(route)
 		if err != nil {
 			return fmt.Errorf("can't update route %s/%s with new private key: %v", routeReadOnly.Namespace, route.Name, err)
@@ -1120,13 +1130,6 @@ func (rc *RouteController) sync(ctx context.Context, key string) error {
 			return fmt.Errorf("can't set status: %w", err)
 		}
 
-		if route.Spec.TLS == nil {
-			route.Spec.TLS = &routev1.TLSConfig{
-				// Defaults
-				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
-				Termination:                   routev1.TLSTerminationEdge,
-			}
-		}
 		route.Spec.TLS.Key = string(certPemData.Key)
 		route.Spec.TLS.Certificate = string(certPemData.Crt)
 
