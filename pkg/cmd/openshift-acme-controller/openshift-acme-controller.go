@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"sync"
@@ -198,7 +197,7 @@ func (o *Options) Complete() error {
 
 	if len(o.ControllerNamespace) == 0 {
 		// Autodetect if running inside a cluster
-		bytes, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+		bytes, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 		if err != nil {
 			return fmt.Errorf("can't autodetect controller namespace: %w", err)
 		}
@@ -273,15 +272,30 @@ func (o *Options) Run(cmd *cobra.Command, streams genericclioptions.IOStreams) e
 
 	// we use the Lease lock type since edits to Leases are less common
 	// and fewer objects in the cluster watch "all Leases".
-	lock := &resourcelock.ConfigMapLock{
-		ConfigMapMeta: metav1.ObjectMeta{
-			Name:      "acme-controller-locks",
-			Namespace: o.ControllerNamespace,
-		},
-		Client: o.kubeClient.CoreV1(),
-		LockConfig: resourcelock.ResourceLockConfig{
+	// lock := &resourcelock.configMapLock{
+	// 	ConfigMapMeta: metav1.ObjectMeta{
+	// 		Name:      "acme-controller-locks",
+	// 		Namespace: o.ControllerNamespace,
+	// 	},
+	// 	Client: o.kubeClient.CoreV1(),
+	// 	LockConfig: resourcelock.ResourceLockConfig{
+	// 		Identity: id,
+	// 	},
+	// }
+
+	lock, err := resourcelock.New(
+		resourcelock.ConfigMapsLeasesResourceLock,
+		o.ControllerNamespace,
+		"acme-controller-locks",
+		o.kubeClient.CoreV1(),
+		o.kubeClient.CoordinationV1(),
+		resourcelock.ResourceLockConfig{
 			Identity: id,
 		},
+	)
+
+	if err != nil {
+		return fmt.Errorf("ConfigMapsLeasesResourceLock failed: %v", err)
 	}
 
 	leChan := make(chan struct{})
