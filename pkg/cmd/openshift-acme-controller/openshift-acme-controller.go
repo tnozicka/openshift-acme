@@ -270,19 +270,6 @@ func (o *Options) Run(cmd *cobra.Command, streams genericclioptions.IOStreams) e
 	id := hostname + "_" + string(uuid.NewUUID())
 	klog.V(4).Infof("Leaderelection ID is %q", id)
 
-	// we use the Lease lock type since edits to Leases are less common
-	// and fewer objects in the cluster watch "all Leases".
-	// lock := &resourcelock.configMapLock{
-	// 	ConfigMapMeta: metav1.ObjectMeta{
-	// 		Name:      "acme-controller-locks",
-	// 		Namespace: o.ControllerNamespace,
-	// 	},
-	// 	Client: o.kubeClient.CoreV1(),
-	// 	LockConfig: resourcelock.ResourceLockConfig{
-	// 		Identity: id,
-	// 	},
-	// }
-
 	lock, err := resourcelock.New(
 		resourcelock.ConfigMapsLeasesResourceLock,
 		o.ControllerNamespace,
@@ -309,6 +296,7 @@ func (o *Options) Run(cmd *cobra.Command, streams genericclioptions.IOStreams) e
 			OnStartedLeading: func(ctx context.Context) {
 				close(leChan)
 			},
+
 			OnStoppedLeading: func() {
 				select {
 				case <-leCtx.Done():
@@ -319,11 +307,18 @@ func (o *Options) Run(cmd *cobra.Command, streams genericclioptions.IOStreams) e
 					time.AfterFunc(3*time.Second, func() {
 						klog.Fatalf("Failed to exit in time after releasing leaderelection lock")
 					})
-
 				default:
 					// Leader election lost
 					klog.Fatalf("leaderelection lost")
 				}
+			},
+
+			OnNewLeader: func(current_id string) {
+				if current_id == id {
+					klog.Info("I'm the leader!")
+					return
+				}
+				klog.Info("New leader is ", current_id)
 			},
 		},
 		Name: "openshift-acme",
