@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	g "github.com/onsi/ginkgo"
+	g "github.com/onsi/ginkgo/v2"
 )
 
 func nowStamp() string {
