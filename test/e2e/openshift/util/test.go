@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base32"
 	"fmt"
@@ -81,12 +82,15 @@ func InitTest() {
 			var gracePeriod int64 = 0
 			var propagation = metav1.DeletePropagationForeground
 			err := f.RouteClientset().RouteV1().Routes(ns.Name).DeleteCollection(
-				&metav1.DeleteOptions{
+				context.Background(),
+				metav1.DeleteOptions{
 					GracePeriodSeconds: &gracePeriod,
 					PropagationPolicy:  &propagation,
-				}, metav1.ListOptions{
+				},
+				metav1.ListOptions{
 					LabelSelector: labels.Everything().String(),
-				})
+				},
+			)
 			if err != nil {
 				return err
 			}

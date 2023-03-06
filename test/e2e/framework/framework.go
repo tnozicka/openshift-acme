@@ -1,16 +1,17 @@
 package framework
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 
 	g "github.com/onsi/ginkgo"
 	o "github.com/onsi/gomega"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/storage/names"
@@ -123,31 +124,43 @@ func (f *Framework) ChangeUser(username string, namespace string) {
 	// We need to reset the user
 	f.clientConfig = nil
 
-	user, err := f.UserClientset().UserV1().Users().Create(&userv1.User{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: username,
+	user, err := f.UserClientset().UserV1().Users().Create(
+		context.Background(),
+		&userv1.User{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: username,
+			},
 		},
-	})
+		metav1.CreateOptions{},
+	)
 	o.Expect(err).NotTo(o.HaveOccurred())
 
-	_, err = f.OAuthClientset().OauthV1().OAuthClients().Create(&oauthv1.OAuthClient{
-		ObjectMeta:  metav1.ObjectMeta{Name: username},
-		GrantMethod: oauthv1.GrantHandlerAuto,
-	})
+	_, err = f.OAuthClientset().OauthV1().OAuthClients().Create(
+		context.Background(),
+		&oauthv1.OAuthClient{
+			ObjectMeta:  metav1.ObjectMeta{Name: username},
+			GrantMethod: oauthv1.GrantHandlerAuto,
+		},
+		metav1.CreateOptions{},
+	)
 	o.Expect(err).NotTo(o.HaveOccurred())
 
 	randomToken := make([]byte, 32)
 	_, err = rand.Read(randomToken)
 	o.Expect(err).NotTo(o.HaveOccurred())
 	accessToken := base64.RawURLEncoding.EncodeToString(randomToken)
-	token, err := f.OAuthClientset().OauthV1().OAuthAccessTokens().Create(&oauthv1.OAuthAccessToken{
-		ObjectMeta:  metav1.ObjectMeta{Name: accessToken},
-		ClientName:  username,
-		UserName:    username,
-		UserUID:     string(user.UID),
-		Scopes:      []string{"user:full"},
-		RedirectURI: "https://localhost:8443/oauth/token/implicit",
-	})
+	token, err := f.OAuthClientset().OauthV1().OAuthAccessTokens().Create(
+		context.Background(),
+		&oauthv1.OAuthAccessToken{
+			ObjectMeta:  metav1.ObjectMeta{Name: accessToken},
+			ClientName:  username,
+			UserName:    username,
+			UserUID:     string(user.UID),
+			Scopes:      []string{"user:full"},
+			RedirectURI: "https://localhost:8443/oauth/token/implicit",
+		},
+		metav1.CreateOptions{},
+	)
 	o.Expect(err).NotTo(o.HaveOccurred())
 
 	f.clientConfig = rest.AnonymousClientConfig(f.AdminClientConfig())
@@ -184,7 +197,7 @@ func (f *Framework) ChangeUser(username string, namespace string) {
 	kubeConfig.Contexts["test"] = context
 	kubeConfig.CurrentContext = "test"
 
-	tmpFile, err := ioutil.TempFile("", fmt.Sprintf("%s-kubeconfig-", username))
+	tmpFile, err := os.CreateTemp("", fmt.Sprintf("%s-kubeconfig-", username))
 	o.Expect(err).NotTo(o.HaveOccurred())
 
 	err = kclientcmd.WriteToFile(*kubeConfig, tmpFile.Name())

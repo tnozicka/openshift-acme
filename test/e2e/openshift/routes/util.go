@@ -79,11 +79,11 @@ func WaitForRouteCondition(ctx context.Context, c routev1clientset.RouteInterfac
 	lw := &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 			options.FieldSelector = fieldSelector
-			return c.List(options)
+			return c.List(context.Background(), options)
 		},
 		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 			options.FieldSelector = fieldSelector
-			return c.Watch(options)
+			return c.Watch(context.Background(), options)
 		},
 	}
 
@@ -109,11 +109,11 @@ func WaitForSecretCondition(ctx context.Context, c corev1clientset.SecretInterfa
 	lw := &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 			options.FieldSelector = fieldSelector
-			return c.List(options)
+			return c.List(context.Background(), options)
 		},
 		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 			options.FieldSelector = fieldSelector
-			return c.Watch(options)
+			return c.Watch(context.Background(), options)
 		},
 	}
 
