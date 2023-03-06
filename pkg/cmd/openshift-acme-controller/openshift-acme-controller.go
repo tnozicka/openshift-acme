@@ -20,7 +20,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	routeclientset "github.com/openshift/client-go/route/clientset/versioned"
 

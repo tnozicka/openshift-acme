@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/spf13/cobra"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (

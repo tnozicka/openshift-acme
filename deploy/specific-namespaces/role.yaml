@@ -6,59 +6,81 @@ metadata:
     app: openshift-acme
 rules:
 - apiGroups:
-  - "route.openshift.io"
+    - 'route.openshift.io'
   resources:
-  - routes
+    - routes
   verbs:
-  - create
-  - get
-  - list
-  - watch
-  - update
-  - patch
-  - delete
-  - deletecollection
+    - create
+    - delete
+    - deletecollection
+    - get
+    - list
+    - patch
+    - update
+    - watch
 
 - apiGroups:
-  - "route.openshift.io"
+    - 'route.openshift.io'
   resources:
-  - routes/custom-host
+    - routes/custom-host
   verbs:
-  - create
+    - create
 
 - apiGroups:
-  - ""
+    - ''
   resources:
-  - configmaps
-  - services
-  - secrets
+    - configmaps
+    - secrets
+    - services
   verbs:
-  - create
-  - get
-  - list
-  - watch
-  - update
-  - patch
-  - delete
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
 
 - apiGroups:
-  - ""
+    - ''
   resources:
-  - limitranges
+    - events
   verbs:
-  - get
-  - list
-  - watch
+    - create
+    - patch
+    - update
 
 - apiGroups:
-  - "apps"
+    - ''
   resources:
-  - replicasets
+    - limitranges
   verbs:
-  - create
-  - get
-  - list
-  - watch
-  - update
-  - patch
-  - delete
+    - get
+    - list
+    - watch
+
+- apiGroups:
+    - 'apps'
+  resources:
+    - replicasets
+  verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+
+- apiGroups:
+    - 'coordination.k8s.io'
+  resources:
+    - leases
+  verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
